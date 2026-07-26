@@ -599,7 +599,7 @@ class ReportEditDescriptionModal(Modal):
             placeholder="Substantiate your report...",
             default=view.params.body,
             required=True,
-            max_length=3950,
+            max_length=3000,
         )
 
         self.add_item(
