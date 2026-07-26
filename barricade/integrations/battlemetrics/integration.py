@@ -156,7 +156,9 @@ class BattlemetricsIntegration(
         if community.id != self.config.community_id:
             raise IntegrationValidationError("Communities do not match")
 
-        missing_optional_scopes = await self.validate_scopes()
+        # TODO: Re-enable once /oauth/introspect endpoint works again
+        # missing_optional_scopes = await self.validate_scopes()
+        missing_optional_scopes = set()
         await validate_ws_connection(self.ws, timeout=5)
         await self.validate_ban_lists(community)
 
