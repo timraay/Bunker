@@ -291,7 +291,7 @@ async def expire_bans_of_player(
                 message = bot.get_partial_message(
                     db_message.channel_id, db_message.message_id
                 )
-                await message.edit(view=view)
+                await message.edit(view=view, embed=None)
             except discord.NotFound:
                 logger = get_logger(community_id)
                 logger.warning(

@@ -214,7 +214,7 @@ class Integration(ABC):
             self.config.enabled = True
             self.start_connection()
 
-            if self.task and self.task.done():
+            if not self.task or self.task.done():
                 self.task = safe_create_task(
                     self._loop(), name=f"IntegrationLoop{self.config.id}"
                 )

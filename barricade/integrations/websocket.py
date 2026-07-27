@@ -28,6 +28,7 @@ async def validate_ws_connection(ws: "Websocket", timeout: float = 3.0):
     ws.start()
     try:
         await ws.wait_until_connected(timeout=timeout)
+        await ws.wait_until_setup_hook_complete(timeout=timeout)
     except TimeoutError:
         raise IntegrationValidationError(
             "Websocket could not connect in time"
@@ -97,6 +98,7 @@ class Websocket:
         token: str | None = None,
         logger: logging.Logger = logging,  # type: ignore
     ):
+        self._setup_hook_complete_event = asyncio.Event()
         self.address = address
         self.token = token
         self.logger = logger
@@ -139,6 +141,18 @@ class Websocket:
             raise RuntimeError("Websocket is stopped") from None
         except TimeoutError:
             raise TimeoutError("Websocket is not connected") from None
+
+    async def wait_until_setup_hook_complete(self, timeout: float | None = None):
+        try:
+            await asyncio.wait_for(
+                asyncio.shield(self._setup_hook_complete_event.wait()), timeout=timeout
+            )
+        except asyncio.CancelledError:
+            raise RuntimeError("Websocket is stopped") from None
+        except TimeoutError:
+            raise TimeoutError(
+                "Websocket setup hook did not complete in time"
+            ) from None
 
     def start(self):
         if self.is_started():
@@ -217,6 +231,8 @@ class Websocket:
         except Exception:
             self.logger.exception("Failed to invoke setup hook")
             await ws.close(code=4000)
+        finally:
+            self._setup_hook_complete_event.set()
 
     async def handle_message(self, message: str | bytes):
         pass
