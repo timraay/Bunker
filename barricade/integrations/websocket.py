@@ -226,6 +226,7 @@ class Websocket:
                 raise e
 
     async def _invoke_setup_hook(self, ws: websockets.WebSocketClientProtocol):
+        self._setup_hook_complete_event.clear()
         try:
             await self.setup_hook()
         except Exception:
