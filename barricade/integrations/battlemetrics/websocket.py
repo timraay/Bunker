@@ -78,6 +78,10 @@ class BattlemetricsWebsocket(Websocket):
                     f"server:updates:{server_id}" for server_id in self.server_ids
                 ],
             )
+            self.logger.info(
+                "Subscribed to Battlemetrics websocket server updates for %d servers",
+                len(self.server_ids),
+            )
 
     async def handle_message(self, message: str | bytes):
         content = json.loads(message)

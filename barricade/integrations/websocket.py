@@ -28,12 +28,16 @@ async def validate_ws_connection(ws: "Websocket", timeout: float = 3.0):
     ws.start()
     try:
         await ws.wait_until_connected(timeout=timeout)
+        ws.logger.info("Websocket connection to %s was established", ws.address)
         await ws.wait_until_setup_hook_complete(timeout=timeout)
+        ws.logger.info("Websocket connection to %s ran setup hook", ws.address)
     except TimeoutError:
+        ws.logger.error("Websocket connection to %s timed out", ws.address)
         raise IntegrationValidationError(
             "Websocket could not connect in time"
         ) from None
     except Exception as e:
+        ws.logger.exception("Websocket connection to %s failed", ws.address)
         raise IntegrationValidationError(f"Websocket failed to connect: {e}") from e
     else:
         ws.logger.info("Websocket connection to %s was successful", ws.address)
