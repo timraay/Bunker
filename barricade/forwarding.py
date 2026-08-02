@@ -390,9 +390,26 @@ class PlayerAlert:
             return False
 
         # Get the most recent PlayerReport for the most up-to-date name
-        player = next(
-            pr for pr in self.reports[-1].players if pr.player_id == self.player_id
+        db_player, _ = await get_or_create_player(
+            db,
+            schemas.PlayerCreateParams(
+                id=self.player_id,
+                bm_rcon_url=None,
+                hll_eos_id=None,
+                hllv_eos_id=None,
+                platform=None,
+            ),
         )
+        player = schemas.PlayerRef.model_validate(db_player)
+
+        if self.reports:
+            player_name = next(
+                pr.player_name
+                for pr in self.reports[-1].players
+                if pr.player_id == self.player_id
+            )
+        else:
+            player_name = None
 
         view = View()
         mention = get_alerts_role_mention(self.community, self.game)
@@ -426,6 +443,7 @@ class PlayerAlert:
         embed = get_alert_embed(
             reports_urls=list(reversed(reports_urls)),
             player=player,
+            player_name=player_name,
             alert_type=self.alert_type,
         )
 

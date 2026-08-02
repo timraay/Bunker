@@ -62,23 +62,26 @@ def get_attachments_channel() -> discord.TextChannel | None:
 
 def get_alert_embed(
     reports_urls: list[tuple[schemas.Report, str]],
-    player: schemas.PlayerReportRef,
+    player: schemas.PlayerRef,
+    player_name: str | None,
     alert_type: PlayerAlertType,
 ):
-    player_id_type = get_player_id_type(player.player_id)
+    player_id_type = get_player_id_type(player.id)
 
-    title = f"{player.player_name}\n{get_player_platform_emoji(player.player.platform)} *`{player.player_id}`*"
+    title = f"{get_player_platform_emoji(player.platform)} *`{player.id}`*"
+    if player_name:
+        title = f"{player_name}\n{title}"
     description = []
 
     if player_id_type == PlayerIDType.STEAM_64_ID:
         description.append(
             format_url(
                 "View on Steam",
-                f"https://steamcommunity.com/profiles/{player.player_id}",
+                f"https://steamcommunity.com/profiles/{player.id}",
             )
         )
 
-    bm_rcon_url = player.player.bm_rcon_url
+    bm_rcon_url = player.bm_rcon_url
     if bm_rcon_url:
         description.append(format_url("View on Battlemetrics", bm_rcon_url))
 
