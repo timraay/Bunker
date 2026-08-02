@@ -97,7 +97,9 @@ class IntegrationBanListMixin(Integration, ABC):
             )
             async with session_factory.begin() as db:
                 await bulk_delete_bans(
-                    db, models.PlayerBan.integration_id == self.config.id
+                    db,
+                    models.PlayerBan.integration_id == self.config.id,
+                    models.PlayerBan.game == game,
                 )
 
         try:
