@@ -230,7 +230,7 @@ class BattlemetricsIntegration(
             self,
             [response.player_report.player_id for response in responses],
         )
-        ban_ids = []
+        ban_ids: list[tuple[str, str, Game]] = []
         failed = []
         async with session_factory() as db:
             try:
@@ -269,7 +269,7 @@ class BattlemetricsIntegration(
                                 "Failed to bulk ban the first 5 players, stopped prematurely"
                             ) from None
                     else:
-                        ban_ids.append((player_id, ban_id))
+                        ban_ids.append((player_id, ban_id, report.game))
 
             finally:
                 await self.set_multiple_ban_ids(db, *ban_ids)

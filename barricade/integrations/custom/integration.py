@@ -33,7 +33,7 @@ from barricade.integrations.integration import (
     is_enabled,
 )
 from barricade.integrations.websocket import validate_ws_connection
-from barricade.utils import game_switch
+from barricade.utils import batched, game_switch
 
 
 def is_websocket_enabled(func):
@@ -189,7 +189,7 @@ class CustomIntegration(Integration):
         if not responses:
             return
 
-        ban_ids: list[tuple[str, str]] = []
+        ban_ids: list[tuple[str, str, Game]] = []
 
         # Sort by game so that they can be grouped together later
         responses = sorted(responses, key=lambda r: r.player_report.report.game)
@@ -199,14 +199,18 @@ class CustomIntegration(Integration):
             for game, responses_group in itertools.groupby(
                 responses, key=lambda r: r.player_report.report.game
             ):
-                async for ban in self.add_multiple_bans(
-                    player_ids={
-                        response.player_report.player_id: self.get_ban_reason(response)
-                        for response in responses_group
-                    },
-                    game=game,
-                ):
-                    ban_ids.append(ban)
+                # Group in batches of 100 to avoid running into timeouts
+                for responses_batch in batched(list(responses_group), 100):
+                    async for ban in self.add_multiple_bans(
+                        player_ids={
+                            response.player_report.player_id: self.get_ban_reason(
+                                response
+                            )
+                            for response in responses_batch
+                        },
+                        game=game,
+                    ):
+                        ban_ids.append((ban[0], ban[1], game))
 
         finally:
             if ban_ids:
@@ -228,11 +232,13 @@ class CustomIntegration(Integration):
         successful_player_ids: list[str] = []
         try:
             for game, remote_ids_group in remote_ids.items():
-                async for ban_id in self.remove_multiple_bans(
-                    ban_ids=list(remote_ids_group.keys()),
-                    game=game,
-                ):
-                    successful_player_ids.append(remote_ids_group[ban_id])
+                # Group in batches of 100 to avoid running into timeouts
+                for ban_ids_batch in batched(list(remote_ids_group.keys()), 100):
+                    async for ban_id in self.remove_multiple_bans(
+                        ban_ids=list(ban_ids_batch),
+                        game=game,
+                    ):
+                        successful_player_ids.append(remote_ids_group[ban_id])
         finally:
             if successful_player_ids:
                 async with session_factory.begin() as db:

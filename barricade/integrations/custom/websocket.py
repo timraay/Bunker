@@ -151,7 +151,7 @@ class CustomWebsocket(Websocket):
         try:
             try:
                 # Wait for and return response
-                return await asyncio.wait_for(fut, timeout=10)
+                return await asyncio.wait_for(asyncio.shield(fut), timeout=10)
             except TimeoutError:
                 self.logger.warning(
                     (
@@ -165,7 +165,7 @@ class CustomWebsocket(Websocket):
                 await ws.send(request_dump)
 
                 try:
-                    return await asyncio.wait_for(fut, timeout=5)
+                    return await asyncio.wait_for(asyncio.shield(fut), timeout=5)
                 except TimeoutError:
                     self.logger.error(
                         "Websocket did not respond in time to request: %r", request

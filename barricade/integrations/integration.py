@@ -392,7 +392,7 @@ class Integration(ABC):
 
     @is_saved
     async def set_multiple_ban_ids(
-        self, db: AsyncSession, *playerids_banids: tuple[str, str]
+        self, db: AsyncSession, *playerids_banids_games: tuple[str, str, Game]
     ):
         """Create multiple ban records.
 
@@ -403,18 +403,22 @@ class Integration(ABC):
         ----------
         db : AsyncSession
             An asynchronous database session
-        playerids_banids : tuple[str, str]
+        playerids_banids_games : tuple[str, str, Game]
             A sequence of player IDs with their associated
-            ban IDs.
+            ban IDs and games.
         """
-        self.logger.info("%r: Setting ban IDs in bulk: %s", self, playerids_banids)
+        assert self.config.id is not None
+        self.logger.info(
+            "%r: Setting ban IDs in bulk: %s", self, playerids_banids_games
+        )
         bans = [
             schemas.PlayerBanCreateParams(
                 player_id=player_id,
-                integration_id=self.config.id,  # type: ignore
+                integration_id=self.config.id,
                 remote_id=ban_id,
+                game=game,
             )
-            for player_id, ban_id in playerids_banids
+            for player_id, ban_id, game in playerids_banids_games
         ]
         await bulk_create_bans(db, bans)
 
@@ -497,11 +501,28 @@ class Integration(ABC):
             ]
 
         total = len(responses)
+        self.logger.info(
+            "%r: Repopulating ban list with %s responses. (Game: %s)", self, total, game
+        )
         try:
             await self.bulk_ban_players(responses=responses)
         except IntegrationBulkBanError as e:
+            self.logger.warning(
+                "%r: Failed to repopulate ban list for %s/%s players.",
+                self,
+                len(e.player_ids),
+                total,
+            )
             return (total - len(e.player_ids), total)
+        except Exception:
+            self.logger.exception(
+                "%r: Failed to repopulate ban list for %s players due to unexpected error.",
+                self,
+                total,
+            )
+            raise
         else:
+            self.logger.info("%r: Successfully repopulated ban list.", self)
             return (total, total)
 
     # --- Commands to implement
