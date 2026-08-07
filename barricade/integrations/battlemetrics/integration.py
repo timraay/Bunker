@@ -100,17 +100,17 @@ class BattlemetricsIntegration(
 
     # --- Extended parent methods
 
-    def start_connection(self):
-        self.ws.start()
+    async def start_connection(self):
+        await self.ws.start()
 
-    def stop_connection(self):
-        self.ws.stop()
+    async def stop_connection(self):
+        await self.ws.stop()
 
-    def update_connection(self):
+    async def update_connection(self):
         self.ws.address = self.get_ws_url()
         self.ws.token = self.config.api_key
         if self.config.enabled:
-            self.ws.update_connection()
+            await self.ws.update_connection()
 
     # TODO: Extend on_report_create to send alerts if a newly reported player is currently online
 

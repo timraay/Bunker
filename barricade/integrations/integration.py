@@ -126,7 +126,7 @@ class Integration(ABC):
         self.config = self.meta.config_cls.model_validate(db_config)
 
         # Update connection
-        self.update_connection()
+        await self.update_connection()
 
         # Also update integration known to manager (if any)
         manager.get_by_config(self.config)
@@ -157,7 +157,7 @@ class Integration(ABC):
             self.config.enabled = True
             async with session_factory.begin() as db:
                 db_config = await self.update(db)
-                self.start_connection()
+                await self.start_connection()
 
                 if not self.task or self.task.done():
                     self.task = safe_create_task(
@@ -170,7 +170,7 @@ class Integration(ABC):
         except Exception:
             # Reset state
             self.config.enabled = False
-            self.stop_connection()
+            await self.stop_connection()
 
             if self.task and not self.task.done():
                 self.task.cancel()
@@ -201,7 +201,7 @@ class Integration(ABC):
             self.config.enabled = False
             async with session_factory.begin() as db:
                 db_config = await self.update(db)
-                self.stop_connection()
+                await self.stop_connection()
 
                 if self.task and not self.task.done():
                     self.task.cancel()
@@ -212,7 +212,7 @@ class Integration(ABC):
         except Exception:
             # Reset state
             self.config.enabled = True
-            self.start_connection()
+            await self.start_connection()
 
             if not self.task or self.task.done():
                 self.task = safe_create_task(
@@ -304,13 +304,13 @@ class Integration(ABC):
 
     # --- Connection hooks
 
-    def start_connection(self):
+    async def start_connection(self):
         pass
 
-    def stop_connection(self):
+    async def stop_connection(self):
         pass
 
-    def update_connection(self):
+    async def update_connection(self):
         pass
 
     async def on_report_create(self, report: schemas.ReportWithToken):

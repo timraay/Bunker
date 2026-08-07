@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import random
 from collections.abc import AsyncIterator
@@ -25,7 +26,7 @@ async def validate_ws_connection(ws: "Websocket", timeout: float = 3.0):
     ws.logger.info("Testing websocket connection to %s", ws.address)
 
     # Start the websocket and wait for it to connect
-    ws.start()
+    await ws.start()
     try:
         await ws.wait_until_connected(timeout=timeout)
         ws.logger.info("Websocket connection to %s was established", ws.address)
@@ -43,7 +44,7 @@ async def validate_ws_connection(ws: "Websocket", timeout: float = 3.0):
         ws.logger.info("Websocket connection to %s was successful", ws.address)
     finally:
         # Always stop the websocket
-        ws.stop()
+        await ws.stop()
 
 
 async def reconnect(
@@ -59,10 +60,12 @@ async def reconnect(
                 yield protocol
         except Exception as e:
             # If we fail to authorize ourselves we raise instead of backoff
-            if isinstance(e, websockets.InvalidStatusCode) and e.status_code in (
-                403,
-                1008,
-            ):
+            if isinstance(e, websockets.InvalidStatusCode):
+                if e.status_code in (403, 1008):
+                    raise
+
+            # Also raise if handshake fails without a status code
+            elif isinstance(e, websockets.InvalidHandshake):
                 raise
 
             # Add a random initial delay between 0 and 5 seconds.
@@ -158,9 +161,9 @@ class Websocket:
                 "Websocket setup hook did not complete in time"
             ) from None
 
-    def start(self):
+    async def start(self):
         if self.is_started():
-            self.stop()
+            await self.stop()
 
         class_name = type(self).__name__
         self._ws_task = safe_create_task(
@@ -171,16 +174,19 @@ class Websocket:
         )
         self._ws = asyncio.Future()
 
-    def stop(self):
+    async def stop(self):
         if self._ws_task:
             self._ws_task.cancel()
+            # Awaiting the task ensures that the "finally" block in _ws_loop is executed first
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._ws_task
             self._ws_task = None
         self._ws.cancel()
 
-    def update_connection(self):
+    async def update_connection(self):
         # Restart the connection
         if self.is_started():
-            self.start()
+            await self.start()
 
     async def _ws_loop(self):
         try:

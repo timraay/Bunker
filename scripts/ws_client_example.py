@@ -6,7 +6,7 @@ from barricade.integrations.custom.websocket import CustomWebsocket
 
 async def main():
     ws = CustomWebsocket("ws://localhost:8000/ws", token="password")
-    ws.start()
+    await ws.start()
     await ws.wait_until_connected(timeout=3)
 
     print(
