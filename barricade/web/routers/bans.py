@@ -52,12 +52,14 @@ async def get_bans(
         Security(get_active_token, scopes=(Scopes.BAN_READ).to_list()),
     ],
     player_id: int | None = None,
+    player_game_id: str | None = None,
     integration_id: int | None = None,
     community_id: int | None = None,
 ):
     result = await bans.get_all_bans(
         db=db,
         player_id=player_id,
+        player_game_id=player_game_id,
         integration_id=integration_id,
         community_id=community_id,
         limit=paginator.limit,

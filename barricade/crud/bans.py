@@ -22,6 +22,7 @@ from barricade.logger import get_logger
 async def get_all_bans(
     db: AsyncSession,
     player_id: int | None = None,
+    player_game_id: str | None = None,
     community_id: int | None = None,
     integration_id: int | None = None,
     limit: int = 100,
@@ -36,6 +37,12 @@ async def get_all_bans(
     stmt = select(models.PlayerBan).limit(limit).offset(offset).options(*options)
     if player_id is not None:
         stmt = stmt.where(models.PlayerBan.player_id == player_id)
+    if player_game_id is not None:
+        stmt = stmt.join(models.PlayerBan.player).where(
+            (models.Player.steam_id == player_game_id)
+            | (models.Player.xplay_id == player_game_id)
+            | (models.Player.hllv_eos_id == player_game_id)
+        )
     if integration_id is not None:
         stmt = stmt.where(models.PlayerBan.integration_id == integration_id)
     if community_id is not None:
@@ -123,7 +130,7 @@ async def get_player_bans_for_community(
             models.PlayerBan.player_id == player_id,
             models.Integration.community_id == community_id,
         )
-        .options(joinedload(models.PlayerBan.integration))
+        .options(selectinload(models.PlayerBan.integration))
     )
     if game:
         stmt = stmt.where(models.PlayerBan.game == game)
