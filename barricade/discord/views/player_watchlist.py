@@ -15,7 +15,7 @@ from barricade.discord.communities import (
     assert_has_any_admin_role,
 )
 from barricade.discord.crud_utils import get_community
-from barricade.discord.utils import LayoutView, View, handle_error_wrap
+from barricade.discord.utils import CustomException, LayoutView, View, handle_error_wrap
 from barricade.exceptions import AlreadyExistsError
 
 
@@ -48,10 +48,21 @@ class PlayerToggleWatchlistButton(
         match: re.Match[str],
         /,
     ):
+        player_id = match["player_id"]
+
+        if player_id.startswith("7656") or len(player_id) == 32:
+            # Previously, player_id was a string representing either the Steam or XPlay ID.
+            # These buttons are no longer valid, so we ask that the user refreshes the message
+            # before trying again.
+            raise CustomException(
+                "Outdated message!",
+                "Due to Barricade updates, this button is no longer valid. Please refresh the message and try again.",
+            )
+
         return cls(
             button=item,
             community_id=int(match["community_id"]),
-            player_id=int(match["player_id"]),
+            player_id=int(player_id),
             is_watchlisted=match["is_watchlisted"] == "1",
         )
 
