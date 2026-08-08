@@ -40,7 +40,7 @@ from barricade.enums import (
     ReportReasonDetails,
     ReportReasonFlag,
 )
-from barricade.utils import get_player_id_type, validate_url
+from barricade.utils import game_switch, get_player_id_type, validate_url
 
 RE_BM_RCON_PLAYER_URL = re.compile(
     r"^https://www\.battlemetrics\.com/rcon/players/(\d+)$"
@@ -113,44 +113,55 @@ class _ReportEditView(LayoutView):
                 f"Invalid player index {player_index} (len={len(self.params.players)})"
             )
 
-        player = self.params.players[player_index]
+        pr = self.params.players[player_index]
         rank = player_index + 1
 
-        if not player.player_name.strip():
+        if not pr.player_name.strip():
             raise ReportValidationError(f"Player {rank} name cannot be empty")
-        if not player.player_id.strip():
+        player_game_id = pr.player.get_game_id(self.params.game)
+        if not player_game_id or not player_game_id.strip():
             raise ReportValidationError(f"Player {rank} must have a player ID")
 
         try:
-            player_id_type = get_player_id_type(player.player_id)
+            player_id_type = get_player_id_type(player_game_id)
         except ValueError:
             raise ReportValidationError(
                 f"Player {rank} has an invalid player ID"
             ) from None
 
-        if player.platform:
-            if not player.platform.is_valid_for_platform_flag(
-                self.params.platforms_bitflag
-            ):
+        if pr.player.platform and not pr.player.platform.is_valid_for_platform_flag(
+            self.params.platforms_bitflag
+        ):
+            raise ReportValidationError(
+                f"Player {rank} platform contradicts crossplay settings"
+            )
+
+        if self.params.game == Game.HLL:
+            if player_id_type == PlayerIDType.EOS_ID:
                 raise ReportValidationError(
-                    f"Player {rank} platform contradicts crossplay settings"
+                    f"Player {rank} ID is not allowed to be an EOS ID"
                 )
 
-            if (player.platform == PlayerPlatform.STEAM) and (
-                player_id_type != PlayerIDType.STEAM_64_ID
-            ):
-                raise ReportValidationError(f"Player {rank} requires a Steam64ID")
+            if pr.player.platform:
+                if (pr.player.platform == PlayerPlatform.STEAM) and (
+                    player_id_type != PlayerIDType.STEAM_64_ID
+                ):
+                    raise ReportValidationError(f"Player {rank} requires a Steam64ID")
 
-            if (player.platform != PlayerPlatform.STEAM) and (
-                player_id_type == PlayerIDType.STEAM_64_ID
-            ):
-                raise ReportValidationError(
-                    f"Player {rank} is not a Steam player but has a Steam64ID"
-                )
+                if (pr.player.platform != PlayerPlatform.STEAM) and (
+                    player_id_type == PlayerIDType.STEAM_64_ID
+                ):
+                    raise ReportValidationError(
+                        f"Player {rank} is not a Steam player but has a Steam64ID"
+                    )
+
+        elif self.params.game == Game.HLLV:
+            if player_id_type != PlayerIDType.EOS_ID:
+                raise ReportValidationError(f"Player {rank} ID must be an EOS ID")
 
         if (
-            player.bm_rcon_url
-            and RE_BM_RCON_PLAYER_URL.match(player.bm_rcon_url) is None
+            pr.player.bm_rcon_url
+            and RE_BM_RCON_PLAYER_URL.match(pr.player.bm_rcon_url) is None
         ):
             raise ReportValidationError(
                 f"Player {rank} has invalid Battlemetrics RCON URL"
@@ -420,12 +431,18 @@ class ReportEditView(_ReportEditView):
             platforms_bitflag=report.platforms_bitflag,
             players=[
                 schemas.PlayerReportCreateParams(
-                    player_id=player.player_id,
-                    player_name=player.player_name,
-                    platform=player.player.platform,
-                    bm_rcon_url=player.player.bm_rcon_url,
+                    player_name=pr.player_name,
+                    player=schemas.PlayerEditParams(
+                        id=pr.player.id,
+                        steam_id=pr.player.steam_id,
+                        xplay_id=pr.player.xplay_id,
+                        hll_eos_id=pr.player.hll_eos_id,
+                        hllv_eos_id=pr.player.hllv_eos_id,
+                        platform=pr.player.platform,
+                        bm_rcon_url=pr.player.bm_rcon_url,
+                    ),
                 )
-                for player in report.players
+                for pr in report.players
             ],
             created_at=report.created_at,
             edited_at=report.edited_at,
@@ -763,7 +780,7 @@ class ReportEditPlayerModal(Modal):
     ):
         super().__init__(title="Edit Player")
         self.view = view
-        self.player = player
+        self.pr = player
 
         self.player_name_input = discord.ui.TextInput(
             style=discord.TextStyle.short,
@@ -774,9 +791,9 @@ class ReportEditPlayerModal(Modal):
 
         self.player_id_input = discord.ui.TextInput(
             style=discord.TextStyle.short,
-            default=player.player_id if player else None,
+            default=player.player.get_game_id(self.game) if player else None,
             required=True,
-            min_length=17,
+            min_length=game_switch(self.game, 17, 32),
             max_length=32,
         )
 
@@ -786,7 +803,7 @@ class ReportEditPlayerModal(Modal):
                 discord.RadioGroupOption(
                     label=platform.value,
                     value=platform.name,
-                    default=(player.platform == platform if player else False),
+                    default=(player.player.platform == platform if player else False),
                 )
                 for platform in PlayerPlatform
                 if platform.is_valid_for_platform_flag(
@@ -798,7 +815,7 @@ class ReportEditPlayerModal(Modal):
         self.bm_rcon_url_input = discord.ui.TextInput(
             style=discord.TextStyle.short,
             placeholder="https://www.battlemetrics.com/rcon/players/...",
-            default=player.bm_rcon_url if player else None,
+            default=player.player.bm_rcon_url if player else None,
             required=False,
             min_length=43,
         )
@@ -814,7 +831,11 @@ class ReportEditPlayerModal(Modal):
         self.add_item(
             discord.ui.Label(
                 text="Player ID",
-                description="The player's unique ID (Steam64ID or Team17 ID).",
+                description=game_switch(
+                    self.game,
+                    "The player's unique ID (Steam64ID or Team17 ID).",
+                    "The player's unique ID (HLLV EOS ID).",
+                ),
                 component=self.player_id_input,
             )
         )
@@ -829,11 +850,12 @@ class ReportEditPlayerModal(Modal):
             )
         )
 
-        self.add_item(
-            discord.ui.TextDisplay(
-                "-# If the player is on Steam, their ID must be a Steam64ID."
+        if self.game == Game.HLL:
+            self.add_item(
+                discord.ui.TextDisplay(
+                    "-# If the player is on Steam, their ID must be a Steam64ID."
+                )
             )
-        )
 
         self.add_item(
             discord.ui.Label(
@@ -842,6 +864,10 @@ class ReportEditPlayerModal(Modal):
                 component=self.bm_rcon_url_input,
             )
         )
+
+    @property
+    def game(self) -> Game:
+        return self.view.params.game
 
     def get_player_name(self) -> str:
         return self.player_name_input.value.strip()
@@ -873,19 +899,29 @@ class ReportEditPlayerModal(Modal):
             return url
 
     async def on_submit(self, interaction: discord.Interaction):
-        if self.player:
-            self.player.player_name = self.get_player_name()
-            self.player.player_id = self.get_player_id()
-            self.player.platform = self.get_platform()
-            self.player.bm_rcon_url = self.get_bm_rcon_url()
+        if self.pr:
+            self.pr.player_name = self.get_player_name()
+            self.pr.player.set_game_id(self.game, self.get_player_id())
+            self.pr.player.platform = self.get_platform()
+            self.pr.player.bm_rcon_url = self.get_bm_rcon_url()
         else:
-            player = schemas.PlayerReportCreateParams(
-                player_name=self.get_player_name(),
-                player_id=self.get_player_id(),
+            player = schemas.PlayerCreateParams(
                 platform=self.get_platform(),
                 bm_rcon_url=self.get_bm_rcon_url(),
+                steam_id="",  # Prevent ValidationError for missing player ID
             )
-            self.view.params.players.append(player)
+            player.set_game_id(self.game, self.get_player_id())
+            # PlayerCreateParams requires a valid player ID. We temporarily set steam_id to an empty
+            # string to satisfy the validation, and then set it to None if it's empty.
+            if player.steam_id == "":
+                player.steam_id = None
+
+            pr = schemas.PlayerReportCreateParams(
+                player_name=self.get_player_name(),
+                player=player,
+            )
+
+            self.view.params.players.append(pr)
 
         await self.view.update_view()
         await interaction.response.edit_message(view=self.view)

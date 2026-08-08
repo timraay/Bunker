@@ -3,9 +3,11 @@ from enum import Enum, IntFlag, StrEnum, auto
 from typing import NamedTuple, assert_never
 
 
+# TODO: BM integration uses this enum for identifier types
 class PlayerIDType(StrEnum):
     STEAM_64_ID = "steamID"
-    UUID = "hllWindowsID"
+    EOS_ID = "eosID"
+    XPLAY_ID = "hllWindowsID"
 
 
 class Platform(StrEnum):

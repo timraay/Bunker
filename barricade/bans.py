@@ -26,7 +26,7 @@ from barricade.logger import get_logger
 
 async def forward_errors(
     callable: Callable[..., Coroutine],
-    player_id: str,
+    player_game_id: str | None,
     game: Game,
     integration: schemas.IntegrationConfig,
     community: schemas.CommunityRef,
@@ -44,7 +44,9 @@ async def forward_errors(
             if not channel:
                 return
 
-            embed.add_field(name="Player ID", value=player_id).add_field(
+            embed.add_field(
+                name="Player ID", value=player_game_id or "Unknown"
+            ).add_field(
                 name="Integration",
                 value=f"{integration.integration_type.value} (#{integration.id})",
             ).add_field(name="Details", value=f"`{str(e)}`", inline=False)
@@ -100,7 +102,7 @@ async def on_player_ban(response: schemas.ResponseWithToken):
 
         coro = forward_errors(
             partial(integration.ban_player, response),
-            player_id=response.player_report.player_id,
+            player_game_id=response.player_report.player.get_game_id(game),
             game=game,
             integration=config,
             community=response.community,
@@ -134,12 +136,12 @@ async def on_player_unban(response: schemas.Response):
         if not integration:
             continue
 
-        player_id = response.player_report.player_id
+        player = response.player_report.player
 
         coro = revoke_ban(
             integration,
             response.community,
-            player_id,
+            player,
             game=db_ban.game,
         )
         coros.append(coro)
@@ -193,7 +195,7 @@ async def remove_banned_players_from_watchlist(response: schemas.ResponseWithTok
 
 async def revoke_dangling_bans(
     db: AsyncSession,
-    player_ids: Sequence[str] | None = None,
+    player_ids: Sequence[int] | None = None,
     community_id: int | None = None,
 ) -> int:
     db_bans = await get_player_bans_without_responses(
@@ -211,10 +213,13 @@ async def revoke_dangling_bans(
         db_community = await db_ban.integration.awaitable_attrs.community
         community = schemas.CommunityRef.model_validate(db_community)
 
+        db_player = await db_ban.player.awaitable_attrs.player
+        player = schemas.PlayerRef.model_validate(db_player)
+
         coro = revoke_ban(
             integration,
             community,
-            db_ban.player_id,
+            player,
             game=db_ban.game,
         )
         coros.append(coro)
@@ -238,7 +243,7 @@ def get_integration_from_ban(db_ban: models.PlayerBan) -> Integration | None:
 async def revoke_ban(
     integration: Integration,
     community: schemas.CommunityRef,
-    player_id: str,
+    player: schemas.PlayerRef,
     game: Game,
 ):
     if not isinstance(integration.config, schemas.IntegrationConfig):
@@ -250,8 +255,8 @@ async def revoke_ban(
     )
 
     await forward_errors(
-        partial(integration.unban_player, player_id, game=game),
-        player_id=player_id,
+        partial(integration.unban_player, player.id, game=game),
+        player_game_id=player.get_game_id(game),
         game=game,
         integration=integration.config,
         community=community,

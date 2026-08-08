@@ -15,7 +15,7 @@ class PlayerReport(ModelBase):
     __tablename__ = "player_reports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    player_id: Mapped[str] = mapped_column(ForeignKey("players.id"))
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
     report_id: Mapped[int] = mapped_column(ForeignKey("reports.id"))
     player_name: Mapped[str]
 

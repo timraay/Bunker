@@ -27,7 +27,7 @@ class PlayerToggleWatchlistButton(
         self,
         button: discord.ui.Button,
         community_id: int,
-        player_id: str,
+        player_id: int,
         is_watchlisted: bool,
     ):
         self.community_id = community_id
@@ -51,7 +51,7 @@ class PlayerToggleWatchlistButton(
         return cls(
             button=item,
             community_id=int(match["community_id"]),
-            player_id=match["player_id"],
+            player_id=int(match["player_id"]),
             is_watchlisted=match["is_watchlisted"] == "1",
         )
 
@@ -59,7 +59,7 @@ class PlayerToggleWatchlistButton(
     def create(
         cls,
         community_id: int,
-        player_id: str,
+        player_id: int,
         is_watchlisted: bool,
         row: int | None = None,
     ):

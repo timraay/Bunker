@@ -166,10 +166,15 @@ class BattlemetricsIntegration(
 
     @is_enabled
     async def ban_player(self, response: schemas.ResponseWithToken):
-        player_id = response.player_report.player_id
-        self.logger.info("%r: Banning player %s", self, player_id)
-
         report = response.player_report.report
+        player_id = response.player_report.player_id
+        player_game_id = response.player_report.player.get_game_id(report.game)
+        if player_game_id is None:
+            raise IntegrationFailureError(
+                player_id, f"Player ID for {report.game} is unknown"
+            )
+
+        self.logger.info("%r: Banning player %s (%s)", self, player_id, player_game_id)
         report_channel = get_report_channel(report.game)
 
         async with session_factory.begin() as db:
@@ -186,7 +191,7 @@ class BattlemetricsIntegration(
 
             try:
                 ban_id = await self.add_ban(
-                    identifier=player_id,
+                    identifier=player_game_id,
                     reason=reason,
                     note=note,
                 )
@@ -198,7 +203,7 @@ class BattlemetricsIntegration(
             await self.set_ban_id(db, player_id, ban_id, report.game)
 
     @is_enabled
-    async def unban_player(self, player_id: str, game: Game | None = None):
+    async def unban_player(self, player_id: int, game: Game | None = None):
         self.logger.info("%r: Unbanning player %s", self, player_id)
         async with session_factory.begin() as db:
             db_ban = await self.get_ban(db, player_id, game=game)
@@ -230,16 +235,30 @@ class BattlemetricsIntegration(
             self,
             [response.player_report.player_id for response in responses],
         )
-        ban_ids: list[tuple[str, str, Game]] = []
+        ban_ids: list[tuple[int, str, Game]] = []
         failed = []
         async with session_factory() as db:
             try:
                 for i, response in enumerate(responses, start=1):
-                    player_id = response.player_report.player_id
                     report = response.player_report.report
+                    player = response.player_report.player
                     report_channel = get_report_channel(report.game)
+                    player_game_id = response.player_report.player.get_game_id(
+                        report.game
+                    )
 
-                    db_ban = await self.get_ban(db, player_id)
+                    # Skip if no player ID is available
+                    if player_game_id is None:
+                        self.logger.warning(
+                            "%r: Player ID for %s is unknown, skipping player %s",
+                            self,
+                            report.game,
+                            response.player_report.player_id,
+                        )
+                        continue
+
+                    # Skip if player was already banned
+                    db_ban = await self.get_ban(db, player.id, game=report.game)
                     if db_ban is not None:
                         continue
 
@@ -251,7 +270,7 @@ class BattlemetricsIntegration(
                     )
                     try:
                         ban_id = await self.add_ban(
-                            identifier=player_id,
+                            identifier=player_game_id,
                             reason=reason,
                             note=note,
                         )
@@ -260,16 +279,16 @@ class BattlemetricsIntegration(
                             "Bulk ban %s/%s %s failed: %s",
                             i,
                             len(responses),
-                            player_id,
+                            player.id,
                             e,
                         )
-                        failed.append(player_id)
+                        failed.append(player.id)
                         if i == 5 and len(failed) == 5:
                             raise IntegrationFailureError(
                                 "Failed to bulk ban the first 5 players, stopped prematurely"
                             ) from None
                     else:
-                        ban_ids.append((player_id, ban_id, report.game))
+                        ban_ids.append((player.id, ban_id, report.game))
 
             finally:
                 await self.set_multiple_ban_ids(db, *ban_ids)
@@ -282,7 +301,7 @@ class BattlemetricsIntegration(
 
     @is_enabled
     async def bulk_unban_players(
-        self, player_ids: Sequence[str], game: Game | None = None
+        self, player_ids: Sequence[int], game: Game | None = None
     ):
         self.logger.info("%r: Bulk unbanning players %s", self, player_ids)
         failed = []

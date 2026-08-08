@@ -54,7 +54,10 @@ async def _process_steam_avatar_url_queue() -> None:
                 promise.set_result(avatar_urls.pop(steam_id, None))
 
 
-async def get_steam_avatar_url(steam_id: str) -> str | None:
+async def get_steam_avatar_url(steam_id: str | None) -> str | None:
+    if not steam_id:
+        return None
+
     try:
         player_id_type = get_player_id_type(steam_id)
     except ValueError:

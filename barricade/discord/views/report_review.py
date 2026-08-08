@@ -433,7 +433,7 @@ def report_review_view_action_row_factory(
     player: schemas.PlayerReportRef,
     response: schemas.PendingResponse | None,
     *,
-    watchlisted_player_ids: set[str],
+    watchlisted_player_ids: set[int],
 ) -> discord.ui.ActionRow | None:
     if not response:
         return None
@@ -519,7 +519,7 @@ def report_review_view_action_row_factory(
 async def get_report_review_view(
     report: schemas.ReportWithToken,
     responses: list[schemas.PendingResponse],
-    watchlisted_player_ids: set[str],
+    watchlisted_player_ids: set[int],
     stats: dict[int, schemas.ResponseStats] | None = None,
     with_refresh_button: bool = True,
 ) -> LayoutView:

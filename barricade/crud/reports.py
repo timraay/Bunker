@@ -1,4 +1,3 @@
-import logging
 from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
@@ -7,6 +6,7 @@ from sqlalchemy.orm import Load, selectinload
 
 from barricade import schemas
 from barricade.crud.communities import get_admin_by_id
+from barricade.crud.players import get_or_upsert_player
 from barricade.crud.responses import get_response_stats
 from barricade.db import models
 from barricade.discord.audit import (
@@ -21,7 +21,7 @@ from barricade.discord.reports import get_report_channel
 from barricade.enums import Game
 from barricade.exceptions import AlreadyExistsError, NotFoundError
 from barricade.hooks import EventHooks
-from barricade.utils import safe_create_task
+from barricade.utils import game_switch, is_steam_id, safe_create_task
 
 
 async def get_token_by_value(db: AsyncSession, token_value: str):
@@ -221,7 +221,7 @@ async def get_report_by_id(
 
 
 async def get_reports_for_player(
-    db: AsyncSession, player_id: str, load_token: bool = False
+    db: AsyncSession, player_id: int, load_token: bool = False
 ):
     """Get all reports of a player
 
@@ -229,7 +229,7 @@ async def get_reports_for_player(
     ----------
     db : AsyncSession
         An asynchronous database session
-    player_id : str
+    player_id : int
         The ID of the player
     load_token : bool, optional
         Whether to also load the relational token property, by default False
@@ -259,7 +259,7 @@ async def get_reports_for_player(
 
 async def is_player_reported(
     db: AsyncSession,
-    player_id: str,
+    player_id: int,
     game: Game | None = None,
 ):
     stmt = (
@@ -272,6 +272,36 @@ async def is_player_reported(
 
     if game is not None:
         stmt = stmt.join(models.PlayerReport.report).where(models.Report.game == game)
+
+    stmt = select(stmt.exists())
+    result = await db.scalar(stmt)
+    return bool(result)
+
+
+async def is_player_reported_by_game_id(
+    db: AsyncSession,
+    player_game_id: str,
+    game: Game,
+):
+    stmt = (
+        select(1)
+        .select_from(models.PlayerReport)
+        .join(models.PlayerReport.player)
+        .join(models.PlayerReport.report)
+        .where(
+            # TODO: Consider whether this should be filtered by game
+            models.Report.game == game,
+            game_switch(
+                game,
+                (
+                    models.Player.steam_id == player_game_id
+                    if is_steam_id(player_game_id)
+                    else models.Player.xplay_id == player_game_id
+                ),
+                models.Player.hllv_eos_id == player_game_id,
+            ),
+        )
+    )
 
     stmt = select(stmt.exists())
     result = await db.scalar(stmt)
@@ -307,16 +337,7 @@ async def create_report(
     for player in params.players:
         # This flushes, and since we don't want a partially initialized report
         # flushed, we do this first.
-        db_player, _ = await get_or_create_player(
-            db,
-            schemas.PlayerCreateParams(
-                id=player.player_id,
-                bm_rcon_url=player.bm_rcon_url,
-                hll_eos_id=player.hll_eos_id,
-                hllv_eos_id=player.hllv_eos_id,
-                platform=player.platform,
-            ),
-        )
+        db_player, _ = await get_or_upsert_player(db, player.player)
         db_players.append(db_player)
         # player.bm_rcon_url = db_player.bm_rcon_url
 
@@ -364,34 +385,28 @@ async def edit_report(
 
     old_report = schemas.ReportWithRelations.model_validate(db_report)
 
-    # Index all existing PRs by their IDs
-    db_prs = {db_pr.player_id: db_pr for db_pr in db_report.players}
+    # Index all existing PRs by their game IDs
+    db_prs = {
+        schemas.PlayerRef.model_validate(db_pr.player).get_game_id(report.game): db_pr
+        for db_pr in db_report.players
+    }
 
     # Iterate over all submitted players
-    for player in report.players:
-        db_pr = db_prs.pop(player.player_id, None)
+    for pr in report.players:
+        db_pr = db_prs.pop(pr.player.get_game_id(report.game), None)
         if db_pr:
             # Player already existed, update their attributes and take them out
             # of the index.
-            db_pr.player_name = player.player_name
-            if player.bm_rcon_url:
-                db_pr.player.bm_rcon_url = player.bm_rcon_url
+            db_pr.player_name = pr.player_name
+            if pr.player.bm_rcon_url:
+                db_pr.player.bm_rcon_url = pr.player.bm_rcon_url
         else:
             # Player did not yet exist, add to report
-            db_player, _ = await get_or_create_player(
-                db,
-                schemas.PlayerCreateParams(
-                    id=player.player_id,
-                    bm_rcon_url=player.bm_rcon_url,
-                    hll_eos_id=player.hll_eos_id,
-                    hllv_eos_id=player.hllv_eos_id,
-                    platform=player.platform,
-                ),
-            )
+            db_player, _ = await get_or_upsert_player(db, pr.player)
             db_pr = models.PlayerReport(
                 # report=db_report,
                 player=db_player,
-                player_name=player.player_name,
+                player_name=pr.player_name,
             )
             db_report.players.append(db_pr)
             # db.add(db_pr)
@@ -514,68 +529,6 @@ async def set_report_comment(
     )
 
     return db_report
-
-
-async def get_player(db: AsyncSession, player_id: str):
-    """Look up a player.
-
-    Parameters
-    ----------
-    db : AsyncSession
-        An asynchronous database session
-    player_id : str
-        The ID of the player
-
-    Returns
-    -------
-    Player | None
-        The player model, or None if it does not exist
-    """
-    return await db.get(models.Player, player_id)
-
-
-async def get_or_create_player(db: AsyncSession, player: schemas.PlayerCreateParams):
-    """Look up a player, and create if it does not exist.
-
-    Parameters
-    ----------
-    db : AsyncSession
-        An asynchronous database session
-    player : schemas.PlayerCreateParams
-        Payload
-
-    Returns
-    -------
-    tuple[Player, bool]
-        The player model and a boolean indicating whether it was created or not
-    """
-    db_player = await get_player(db, player.id)
-    created = False
-    if db_player:
-        dirty = False
-        for attr in ("bm_rcon_url", "hll_eos_id", "hllv_eos_id", "platform"):
-            new_value = getattr(player, attr)
-            old_value = getattr(db_player, attr)
-            if new_value and new_value != old_value:
-                if old_value:
-                    logging.warning(
-                        "Updating %s for player %s from %s to %s",
-                        attr,
-                        player.id,
-                        old_value,
-                        new_value,
-                    )
-                setattr(db_player, attr, new_value)
-                dirty = True
-        if dirty:
-            await db.flush()
-    else:
-        db_player = models.Player(**player.model_dump())
-        db.add(db_player)
-        await db.flush()
-        created = True
-
-    return db_player, created
 
 
 async def get_report_message_by_community_id(

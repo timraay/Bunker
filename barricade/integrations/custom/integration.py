@@ -110,11 +110,14 @@ class CustomIntegration(Integration):
                 body=report.body,
                 reasons=report.reasons_bitflag.to_list(report.reasons_custom),
                 attachment_urls=[],
+                game=report.game,
+                platforms=report.platforms_bitflag.to_platforms(),
                 players=[
                     NewReportRequestPayloadPlayer(
-                        player_id=player.player_id,
+                        player_id=player.player.get_game_id(report.game) or "",
                         player_name=player.player_name,
                         bm_rcon_url=player.player.bm_rcon_url,
+                        platform=player.player.platform,
                     )
                     for player in report.players
                 ],
@@ -140,16 +143,24 @@ class CustomIntegration(Integration):
     @is_enabled
     async def ban_player(self, response: schemas.ResponseWithToken):
         async with session_factory.begin() as db:
-            player_id = response.player_report.player_id
             game = response.player_report.report.game
-            self.logger.info("%r: Banning player %s", self, player_id)
+            player_id = response.player_report.player_id
+            player_game_id = response.player_report.player.get_game_id(game)
+            if player_game_id is None:
+                raise IntegrationFailureError(
+                    player_id, f"Player ID for {game} is unknown"
+                )
+
+            self.logger.info(
+                "%r: Banning player %s (%s)", self, player_id, player_game_id
+            )
             db_ban = await self.get_ban(db, player_id, game=game)
             if db_ban is not None:
                 raise AlreadyBannedError(player_id, "Player is already banned")
 
             try:
                 remote_id = await self.add_ban(
-                    player_id=player_id,
+                    player_game_id=player_game_id,
                     game=game,
                     reason=self.get_ban_reason(response),
                 )
@@ -161,7 +172,7 @@ class CustomIntegration(Integration):
             await self.set_ban_id(db, player_id, remote_id, game)
 
     @is_enabled
-    async def unban_player(self, player_id: str, game: Game | None = None):
+    async def unban_player(self, player_id: int, game: Game | None = None):
         self.logger.info("%r: Unbanning player %s", self, player_id)
         async with session_factory.begin() as db:
             db_ban = await self.get_ban(db, player_id, game=game)
@@ -189,48 +200,73 @@ class CustomIntegration(Integration):
         if not responses:
             return
 
-        ban_ids: list[tuple[str, str, Game]] = []
+        playerids_banids_games: list[tuple[int, str, Game]] = []
 
         # Sort by game so that they can be grouped together later
         responses = sorted(responses, key=lambda r: r.player_report.report.game)
 
-        try:
-            # We can only bulk add bans for players of the same game, so we group by game first.
-            for game, responses_group in itertools.groupby(
-                responses, key=lambda r: r.player_report.report.game
-            ):
-                # Group in batches of 100 to avoid running into timeouts
-                for responses_batch in batched(list(responses_group), 100):
-                    async for ban in self.add_multiple_bans(
-                        player_ids={
-                            response.player_report.player_id: self.get_ban_reason(
-                                response
-                            )
-                            for response in responses_batch
-                        },
-                        game=game,
-                    ):
-                        ban_ids.append((ban[0], ban[1], game))
+        async with session_factory.begin() as db:
+            try:
+                # We can only bulk add bans for players of the same game, so we group by game first.
+                for game, responses_group in itertools.groupby(
+                    responses, key=lambda r: r.player_report.report.game
+                ):
+                    # Group in batches of 100 to avoid running into timeouts
+                    for responses_batch in batched(list(responses_group), 100):
+                        player_game_id_to_id_map: dict[str, int] = {}
+                        player_game_id_to_reason_map: dict[str, str | None] = {}
+                        for response in responses_batch:
+                            player = response.player_report.player
+                            player_game_id = player.get_game_id(game)
 
-        finally:
-            if ban_ids:
-                async with session_factory.begin() as db:
-                    await self.set_multiple_ban_ids(db, *ban_ids)
+                            # Skip if no player ID is available
+                            if player_game_id is None:
+                                self.logger.warning(
+                                    "%r: Player ID for %s is unknown, skipping player %s",
+                                    self,
+                                    game,
+                                    player.id,
+                                )
+                                continue
+
+                            # Skip if player was already banned
+                            db_ban = await self.get_ban(db, player.id, game=game)
+                            if db_ban is not None:
+                                continue
+
+                            player_game_id_to_id_map[player_game_id] = (
+                                response.player_report.player_id
+                            )
+                            player_game_id_to_reason_map[player_game_id] = (
+                                self.get_ban_reason(response)
+                            )
+
+                        async for player_game_id, ban_id in self.add_multiple_bans(
+                            player_game_id_to_reason_map, game
+                        ):
+                            player_id = player_game_id_to_id_map[player_game_id]
+                            playerids_banids_games.append((player_id, ban_id, game))
+
+            finally:
+                if playerids_banids_games:
+                    await self.set_multiple_ban_ids(db, *playerids_banids_games)
 
     @is_enabled
     async def bulk_unban_players(
-        self, player_ids: Sequence[str], game: Game | None = None
+        self, player_ids: Sequence[int], game: Game | None = None
     ):
         self.logger.info("%r: Bulk unbanning players %s", self, player_ids)
         async with session_factory() as db:
-            remote_ids: dict[Game, dict[str, str]] = {}
+            # Per game, fetch the remote ban ID for each player ID.
+            remote_ids: dict[Game, dict[str, int]] = {}
             for player_id in player_ids:
                 ban = await self.get_ban(db, player_id, game=game)
                 if ban:
                     remote_ids.setdefault(ban.game, {})[ban.remote_id] = player_id
 
-        successful_player_ids: list[str] = []
+        successful_player_ids: list[int] = []
         try:
+            # Send all remote IDs to the integration for unbanning
             for game, remote_ids_group in remote_ids.items():
                 # Group in batches of 100 to avoid running into timeouts
                 for ban_ids_batch in batched(list(remote_ids_group.keys()), 100):
@@ -240,6 +276,7 @@ class CustomIntegration(Integration):
                     ):
                         successful_player_ids.append(remote_ids_group[ban_id])
         finally:
+            # Delete ban IDs of all successfully unbanned players
             if successful_player_ids:
                 async with session_factory.begin() as db:
                     await self.discard_multiple_ban_ids(db, successful_player_ids)
@@ -297,7 +334,7 @@ class CustomIntegration(Integration):
     @is_websocket_enabled
     async def add_multiple_bans(
         self,
-        player_ids: dict[str, str | None],
+        player_game_ids: dict[str, str | None],
         game: Game,
         *,
         partial_retry: bool = True,
@@ -311,7 +348,7 @@ class CustomIntegration(Integration):
             response = await self.ws.execute(
                 ClientRequestType.BAN_PLAYERS,
                 BanPlayersRequestPayload(
-                    player_ids=player_ids,
+                    player_ids=player_game_ids,
                     config=BanPlayersRequestConfigPayload(
                         game=game,
                         banlist_id=banlist_id,
@@ -323,16 +360,16 @@ class CustomIntegration(Integration):
             if e.response.get("error") != "Could not ban all players":
                 raise
 
-            successful_ids = e.response["ban_ids"]
+            successful_ids: dict[str, str] = e.response["ban_ids"]
             for player_id, ban_id in successful_ids.items():
-                yield str(player_id), str(ban_id)
+                yield player_id, ban_id
 
             if not partial_retry:
                 raise
 
             # Retry for failed player IDs
             missing_player_ids = {
-                k: v for k, v in player_ids.items() if k not in successful_ids
+                k: v for k, v in player_game_ids.items() if k not in successful_ids
             }
             async for player_id, ban_id in self.add_multiple_bans(
                 missing_player_ids, game, partial_retry=False
@@ -340,8 +377,9 @@ class CustomIntegration(Integration):
                 yield player_id, ban_id
         else:
             assert response is not None
-            for player_id, ban_id in response["ban_ids"].items():
-                yield str(player_id), str(ban_id)
+            successful_ids: dict[str, str] = response["ban_ids"]
+            for player_id, ban_id in successful_ids.items():
+                yield player_id, ban_id
 
     @is_websocket_enabled
     async def remove_multiple_bans(
@@ -385,9 +423,11 @@ class CustomIntegration(Integration):
             for ban_id in response["ban_ids"]:
                 yield str(ban_id)
 
-    async def add_ban(self, player_id: str, game: Game, reason: str | None = None):
-        _, ban_id = await anext(self.add_multiple_bans({player_id: reason}, game=game))
+    async def add_ban(self, player_game_id: str, game: Game, reason: str | None = None):
+        _, ban_id = await anext(
+            self.add_multiple_bans({player_game_id: reason}, game=game)
+        )
         return ban_id
 
-    async def remove_ban(self, ban_id: str, game: Game):
-        return await anext(self.remove_multiple_bans([ban_id], game=game))
+    async def remove_ban(self, remote_id: str, game: Game):
+        return await anext(self.remove_multiple_bans([remote_id], game=game))

@@ -17,13 +17,16 @@ from barricade.constants import (
     T17_SUPPORT_REASON_MASK,
 )
 from barricade.crud.communities import get_community_by_id
-from barricade.crud.reports import (
-    get_or_create_player,
+from barricade.crud.players import (
+    edit_player,
     get_player,
+    get_player_by_game_id,
+)
+from barricade.crud.reports import (
     get_report_by_id,
     get_report_message_by_community_id,
     get_reports_for_player,
-    is_player_reported,
+    is_player_reported_by_game_id,
 )
 from barricade.crud.responses import (
     bulk_get_response_stats,
@@ -34,6 +37,7 @@ from barricade.crud.responses import (
 from barricade.crud.watchlists import (
     filter_watchlisted_player_ids,
     is_player_watchlisted,
+    is_player_watchlisted_by_game_id,
 )
 from barricade.db import models, session_factory
 from barricade.discord import bot
@@ -228,13 +232,22 @@ async def delete_private_report_messages(report: schemas.ReportWithRelations):
                     db_responses = await get_community_responses_to_report(
                         db, report, message_data.community_id
                     )
-                    banned_ids = [
-                        db_response.player_report.player_id
-                        for db_response in db_responses
-                        if db_response.banned
-                    ]
 
-                    if banned_ids:
+                    banned_game_ids: list[str] = []
+                    for db_response in db_responses:
+                        if not db_response.banned:
+                            continue
+
+                        player = schemas.PlayerRef.model_validate(
+                            db_response.player_report.player
+                        )
+                        player_game_id = player.get_game_id(
+                            db_response.player_report.report.game
+                        )
+                        if player_game_id:
+                            banned_game_ids.append(player_game_id)
+
+                    if banned_game_ids:
                         view = View()
                         if len(report.players) == 1:
                             player_report = report.players[0]
@@ -256,7 +269,7 @@ async def delete_private_report_messages(report: schemas.ReportWithRelations):
                             "Notifying community %s about revoked bans on deleted report %s for players %s",
                             message_data.community_id,
                             report.id,
-                            banned_ids,
+                            banned_game_ids,
                         )
                         # TODO: Disable buttons
                         # await message.edit(view=None)
@@ -264,7 +277,7 @@ async def delete_private_report_messages(report: schemas.ReportWithRelations):
                             embed=discord.Embed(
                                 description=(
                                     "-# **This report was deleted!** One or more bans have been revoked as a result."
-                                    f"\n-# `{'`, `'.join(banned_ids)}`"
+                                    f"\n-# `{'`, `'.join(banned_game_ids)}`"
                                 ),
                                 color=discord.Colour.red(),
                             ),
@@ -337,7 +350,7 @@ async def invoke_integration_report_create_hook(report: schemas.ReportWithToken)
 class PlayerAlert:
     def __init__(
         self,
-        player_id: str,
+        player_id: int,
         community: schemas.CommunityRef,
         reports: Iterable[schemas.ReportWithToken],
         alert_type: PlayerAlertType,
@@ -389,19 +402,10 @@ class PlayerAlert:
             # No messages were located, so we don't have any reports to point the user at.
             return False
 
-        # Get the most recent PlayerReport for the most up-to-date name
-        db_player, _ = await get_or_create_player(
-            db,
-            schemas.PlayerCreateParams(
-                id=self.player_id,
-                bm_rcon_url=None,
-                hll_eos_id=None,
-                hllv_eos_id=None,
-                platform=None,
-            ),
-        )
+        db_player = await get_player(db, self.player_id)
         player = schemas.PlayerRef.model_validate(db_player)
 
+        # Get the most recent PlayerReport for the most up-to-date name
         if self.reports:
             player_name = next(
                 pr.player_name
@@ -444,6 +448,7 @@ class PlayerAlert:
             reports_urls=list(reversed(reports_urls)),
             player=player,
             player_name=player_name,
+            game=self.game,
             alert_type=self.alert_type,
         )
 
@@ -457,18 +462,22 @@ class PlayerAlert:
 
 async def send_optional_player_alert_to_community(
     community_id: int,
-    player_ids: Sequence[str],
+    player_game_ids: Sequence[str],
     game: Game,
 ):
     alerts: list[PlayerAlert] = []
     community: schemas.CommunityRef | None = None
 
     async with session_factory() as db:
-        for player_id in player_ids:
-            is_watchlisted = await is_player_watchlisted(db, player_id, community_id)
-            if is_watchlisted:
+        for player_game_id in player_game_ids:
+            if await is_player_watchlisted_by_game_id(
+                db, player_game_id, game, community_id
+            ):
+                db_player = await get_player_by_game_id(db, player_game_id, game)
+                player = schemas.PlayerRef.model_validate(db_player)
+
                 db_reports = await get_reports_for_player(
-                    db, player_id, load_token=True
+                    db, player.id, load_token=True
                 )
                 reports = [
                     schemas.ReportWithToken.model_validate(db_report)
@@ -480,7 +489,7 @@ async def send_optional_player_alert_to_community(
                     community = schemas.CommunityRef.model_validate(db_community)
 
                 alert = PlayerAlert(
-                    player_id=player_id,
+                    player_id=player.id,
                     community=community,
                     reports=reports,
                     alert_type=PlayerAlertType.WATCHLISTED,
@@ -489,7 +498,7 @@ async def send_optional_player_alert_to_community(
                 alerts.append(alert)
 
             # TODO: Add config option to disable cross-game report alerts
-            elif await is_player_reported(db, player_id):
+            elif await is_player_reported_by_game_id(db, player_game_id, game):
                 if not community:
                     db_community = await get_community_by_id(db, community_id)
                     community = schemas.CommunityRef.model_validate(db_community)
@@ -497,9 +506,12 @@ async def send_optional_player_alert_to_community(
                 if community.games_bitflag & game.to_flag() == 0:
                     continue
 
+                db_player = await get_player_by_game_id(db, player_game_id, game)
+                player = schemas.PlayerRef.model_validate(db_player)
+
                 db_reports = await get_reports_for_player_with_no_community_review(
                     db,
-                    player_id,
+                    player.id,
                     community_id,
                     platform_filter=game_switch(
                         game,
@@ -519,7 +531,7 @@ async def send_optional_player_alert_to_community(
                 ]
 
                 alert = PlayerAlert(
-                    player_id=player_id,
+                    player_id=player.id,
                     community=community,
                     reports=reports,
                     alert_type=PlayerAlertType.UNREVIEWED,
@@ -541,16 +553,19 @@ async def send_optional_player_alert_to_community(
 # Collect EOS IDs
 
 
-def is_eos_id_necessary(report: schemas.ReportWithToken, player_id: str) -> bool:
+def is_eos_id_necessary(report: schemas.ReportWithToken, player_game_id: str) -> bool:
     if not might_forward_to_staff(report):
         return False
-    if get_player_id_type(player_id) == PlayerIDType.STEAM_64_ID:  # noqa: SIM103
+    if report.game == Game.HLLV:
+        # In HLLV, player IDs are their EOS IDs
+        return False
+    if get_player_id_type(player_game_id) == PlayerIDType.STEAM_64_ID:  # noqa: SIM103
         return False
     return True
 
 
 async def update_player_eos_id(
-    db: AsyncSession, player_id: str, community_id: int
+    db: AsyncSession, player_id: int, community_id: int
 ) -> bool:
     logger = get_logger(community_id)
     integration_manager = IntegrationManager()
@@ -568,10 +583,12 @@ async def update_player_eos_id(
             try:
                 eos_ids = await integration.get_player_eos_ids(player_id)
                 if eos_ids:
-                    await get_or_create_player(
+                    db_player = await edit_player(
                         db,
-                        schemas.PlayerCreateParams(
+                        schemas.PlayerEditParams(
                             id=player_id,
+                            steam_id=None,
+                            xplay_id=None,
                             bm_rcon_url=None,
                             hll_eos_id=eos_ids[0],
                             hllv_eos_id=eos_ids[1],
@@ -599,9 +616,13 @@ async def update_player_eos_id_for_report(report: schemas.ReportWithToken) -> No
                 report.token.community_id,
             )
 
-            if not eos_id_found and is_eos_id_necessary(
-                report, player_report.player_id
-            ):
+            player_game_id = player_report.player.get_game_id(report.game)
+            if not player_game_id:
+                raise ValueError(
+                    f"Player {player_report.player_id} has no game ID for game {report.game}"
+                )
+
+            if not eos_id_found and is_eos_id_necessary(report, player_game_id):
                 logger = get_logger(report.token.community_id)
                 logger.info(
                     "Failed to find EOS ID for player %s in report %s with T17 Support reason.",
@@ -687,7 +708,7 @@ async def send_or_edit_report_review_message(
     responses: list[schemas.PendingResponse],
     community: schemas.CommunityRef,
     stats: dict[int, schemas.ResponseStats] | None = None,
-    watchlisted_player_ids: set[str] | None = None,
+    watchlisted_player_ids: set[int] | None = None,
 ):
     if report.token.community_id == community.id:
         # Since the community created the report, they should not

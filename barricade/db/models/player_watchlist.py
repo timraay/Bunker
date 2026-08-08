@@ -14,7 +14,7 @@ class PlayerWatchlist(ModelBase):
     __tablename__ = "player_watchlists"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    player_id: Mapped[str] = mapped_column(ForeignKey("players.id"))
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
     community_id: Mapped[int] = mapped_column(
         ForeignKey("communities.id", ondelete="CASCADE")
     )

@@ -303,7 +303,7 @@ class CRCONIntegration(
             ),
         )
 
-    async def get_player_eos_ids(self, player_id: str) -> tuple[str | None, str | None]:
+    async def get_player_eos_ids(self, player_id: int) -> tuple[str | None, str | None]:
         resp = await self._make_request(
             "GET", "/get_player_profile", data=dict(player_id=player_id)
         )

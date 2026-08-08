@@ -9,6 +9,7 @@ from pydantic import (
     computed_field,
     field_serializer,
     field_validator,
+    model_validator,
 )
 
 from barricade.constants import REPORT_MAX_PLAYERS, REPORT_TOKEN_EXPIRE_DELTA
@@ -172,11 +173,52 @@ class _CommunityBase(BaseModel):
 
 
 class _PlayerBase(BaseModel):
-    id: str
+    steam_id: str | None
+    xplay_id: str | None
     bm_rcon_url: str | None
     hll_eos_id: str | None
     hllv_eos_id: str | None
     platform: PlayerPlatform | None
+
+    @property
+    def hll_id(self) -> str | None:
+        return self.steam_id or self.xplay_id
+
+    @hll_id.setter
+    def hll_id(self, value: str | None) -> None:
+        if value is None:
+            self.steam_id = None
+            self.xplay_id = None
+        elif len(value) == 17:
+            self.steam_id = value
+            self.xplay_id = None
+        else:
+            self.steam_id = None
+            self.xplay_id = value
+
+    @property
+    def hllv_id(self) -> str | None:
+        return self.hllv_eos_id
+
+    @hllv_id.setter
+    def hllv_id(self, value: str | None) -> None:
+        self.hllv_eos_id = value
+
+    def get_game_id(self, game: Game) -> str | None:
+        if game == Game.HLL:
+            return self.hll_id
+        elif game == Game.HLLV:
+            return self.hllv_id
+        else:
+            raise ValueError(f"Unsupported game: {game}")
+
+    def set_game_id(self, game: Game, value: str | None) -> None:
+        if game == Game.HLL:
+            self.hll_id = value
+        elif game == Game.HLLV:
+            self.hllv_id = value
+        else:
+            raise ValueError(f"Unsupported game: {game}")
 
 
 class _ReportTokenBase(BaseModel):
@@ -204,7 +246,6 @@ class _ReportBase(BaseModel):
 
 
 class _PlayerReportBase(BaseModel):
-    player_id: str
     player_name: str
 
 
@@ -218,14 +259,14 @@ class _ResponseBase(BaseModel):
 
 
 class _PlayerBanBase(BaseModel):
-    player_id: str
+    player_id: int
     integration_id: int
     game: Game
     remote_id: str
 
 
 class _PlayerWatchlistBase(BaseModel):
-    player_id: str
+    player_id: int
     community_id: int
 
 
@@ -279,12 +320,15 @@ class CommunityRef(_CommunityBase, _ModelFromAttributes):
 
 
 class PlayerRef(_PlayerBase, _ModelFromAttributes):
+    id: int
+
     def __repr__(self) -> str:
         return f"Player[id={self.id}]"
 
 
 class PlayerReportRef(_PlayerReportBase, _ModelFromAttributes):
     id: int
+    player_id: int
     report_id: int
 
     player: PlayerRef
@@ -485,14 +529,28 @@ class CommunityCreateParams(CommunityEditParams):
 
 
 class PlayerCreateParams(_PlayerBase):
-    pass
+    @model_validator(mode="after")
+    def ensure_at_least_one_game_id(self):
+        if self.steam_id is None and self.xplay_id is None and self.hllv_eos_id is None:
+            raise ValueError(
+                "At least one of the following must be provided: steam_id, xplay_id, hllv_eos_id"
+            )
+        return self
+
+    steam_id: str | None = None
+    xplay_id: str | None = None
+    bm_rcon_url: str | None = None
+    hll_eos_id: str | None = None
+    hllv_eos_id: str | None = None
+    platform: PlayerPlatform | None = None
+
+
+class PlayerEditParams(PlayerCreateParams):
+    id: int
 
 
 class PlayerReportCreateParams(_PlayerReportBase):
-    bm_rcon_url: str | None
-    hll_eos_id: str | None = None
-    hllv_eos_id: str | None = None
-    platform: PlayerPlatform | None
+    player: PlayerCreateParams
 
 
 class ReportEditParams(_ReportBase):
@@ -506,13 +564,13 @@ class ReportEditParams(_ReportBase):
     @property
     def effective_platforms_bitflag(self) -> PlatformFlag:
         platforms = PlatformFlag(0)
-        for player in self.players:
-            if player.platform is None:
+        for pr in self.players:
+            if pr.player.platform is None:
                 platforms = PlatformFlag.all()
                 break
 
             for platform in PlatformFlag:
-                if player.platform.is_valid_for_platform_flag(platform):
+                if pr.player.platform.is_valid_for_platform_flag(platform):
                     platforms |= platform
 
         return platforms & self.platforms_bitflag
@@ -563,6 +621,7 @@ class PlayerWatchlistCreateParams(_PlayerWatchlistBase):
 
 
 # --- Report submission models
+# TODO: Remove
 
 
 class ReportSubmissionPlayerData(PlayerReportCreateParams):

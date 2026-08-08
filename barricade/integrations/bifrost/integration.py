@@ -1,69 +1,8 @@
-import re
-from datetime import datetime
-from typing import TypedDict
-
 from barricade import schemas
 from barricade.enums import Emojis, IntegrationType
 from barricade.integrations.custom import CustomIntegration, is_websocket_enabled
 from barricade.integrations.integration import IntegrationMetaData, is_enabled
-from barricade.integrations.scope import Scope
 from barricade.utils import async_ttl_cache
-
-RE_VERSION = re.compile(r"v(?P<major>\d+).(?P<minor>\d+).(?P<patch>\d+)")
-
-REQUIRED_PERMISSIONS = {
-    "can_view_blacklists",
-    "can_create_blacklists",
-    "can_add_blacklist_records",
-    "can_change_blacklist_records",
-    "can_delete_blacklist_records",
-    "can_view_player_profile",
-}
-
-REQUIRED_SCOPES = {
-    Scope("can_view_blacklists"),
-    Scope("can_create_blacklists"),
-    Scope("can_add_blacklist_records"),
-    Scope("can_change_blacklist_records"),
-    Scope("can_delete_blacklist_records"),
-    Scope("can_view_player_profile"),
-}
-
-
-class Blacklist(TypedDict):
-    id: int
-    name: str
-    sync: str
-    servers: list[int] | None
-
-
-class PlayerName(TypedDict):
-    id: int
-    name: str
-    player_id: str
-    created: datetime
-    last_seen: datetime
-
-
-class Player(TypedDict):
-    id: int
-    player_id: str
-    created: datetime
-    names: list[PlayerName]
-    steaminfo: dict | None
-
-
-class BlacklistRecord(TypedDict):
-    id: int
-    player_id: str
-    reason: str
-    admin_name: str
-    created_at: datetime
-    expires_at: datetime | None
-    is_active: bool
-    blacklist: Blacklist
-    player: Player
-    formatted_reason: str
 
 
 class BifrostIntegration(

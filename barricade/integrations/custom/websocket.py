@@ -185,8 +185,10 @@ class CustomWebsocket(Websocket):
         if not self.integration:
             return
 
-        player_ids: list[str] | None = payload.get("player_ids") if payload else None
-        if not player_ids:
+        player_game_ids: list[str] | None = (
+            payload.get("player_ids") if payload else None
+        )
+        if not player_game_ids:
             raise WebsocketRequestException("Missing player_ids")
 
         assert payload is not None
@@ -198,6 +200,6 @@ class CustomWebsocket(Websocket):
 
         await send_optional_player_alert_to_community(
             self.integration.config.community_id,
-            player_ids,
+            player_game_ids,
             game=game,
         )

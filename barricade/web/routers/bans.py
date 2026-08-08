@@ -19,7 +19,7 @@ def get_player_ban_dependency(load_relations: bool):
     async def inner(
         db: DatabaseDep,
         integration: IntegrationDep,
-        player_id: str,
+        player_id: int,
     ):
         assert integration.config.id is not None
         db_ban = await bans.get_ban_by_player_and_integration(
@@ -51,7 +51,7 @@ async def get_bans(
         web_schemas.TokenWithHash,
         Security(get_active_token, scopes=(Scopes.BAN_READ).to_list()),
     ],
-    player_id: str | None = None,
+    player_id: int | None = None,
     integration_id: int | None = None,
     community_id: int | None = None,
 ):
@@ -73,7 +73,7 @@ async def get_dangling_bans(
         web_schemas.TokenWithHash,
         Security(get_active_token, scopes=Scopes.BAN_MANAGE.to_list()),
     ],
-    player_id: str | None = None,
+    player_id: int | None = None,
     community_id: int | None = None,
 ):
     result = await bans.get_player_bans_without_responses(
@@ -91,7 +91,7 @@ async def delete_dangling_bans(
         web_schemas.TokenWithHash,
         Security(get_active_token, scopes=Scopes.BAN_MANAGE.to_list()),
     ],
-    player_id: str | None = None,
+    player_id: int | None = None,
     community_id: int | None = None,
 ) -> int:
     return await revoke_dangling_bans(
@@ -126,7 +126,7 @@ async def get_own_community_bans(
         web_schemas.TokenWithHash,
         Security(get_active_token_community, scopes=Scopes.BAN_ME_READ.to_list()),
     ],
-    player_id: str | None = None,
+    player_id: int | None = None,
     integration_id: int | None = None,
 ):
     return get_bans(

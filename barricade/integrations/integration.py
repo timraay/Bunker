@@ -320,7 +320,7 @@ class Integration(ABC):
 
     @is_saved
     async def get_ban(
-        self, db: AsyncSession, player_id: str, game: Game | None = None
+        self, db: AsyncSession, player_id: int, game: Game | None = None
     ) -> models.PlayerBan | None:
         """Get a player ban.
 
@@ -328,7 +328,7 @@ class Integration(ABC):
         ----------
         db : AsyncSession
             An asynchronous database session
-        player_id : str
+        player_id : int
             The ID of a player
         game : Game | None
             The game the player is banned in. If None, any game is accepted.
@@ -349,7 +349,7 @@ class Integration(ABC):
     async def set_ban_id(
         self,
         db: AsyncSession,
-        player_id: str,
+        player_id: int,
         ban_id: str,
         game: Game,
     ) -> models.PlayerBan:
@@ -359,7 +359,7 @@ class Integration(ABC):
         ----------
         db : AsyncSession
             An asynchronous database session
-        player_id : str
+        player_id : int
             The ID of a player
         ban_id : str
             The ID of the ban this player received
@@ -392,7 +392,7 @@ class Integration(ABC):
 
     @is_saved
     async def set_multiple_ban_ids(
-        self, db: AsyncSession, *playerids_banids_games: tuple[str, str, Game]
+        self, db: AsyncSession, *playerids_banids_games: tuple[int, str, Game]
     ):
         """Create multiple ban records.
 
@@ -403,7 +403,7 @@ class Integration(ABC):
         ----------
         db : AsyncSession
             An asynchronous database session
-        playerids_banids_games : tuple[str, str, Game]
+        playerids_banids_games : tuple[int, str, Game]
             A sequence of player IDs with their associated
             ban IDs and games.
         """
@@ -423,14 +423,14 @@ class Integration(ABC):
         await bulk_create_bans(db, bans)
 
     @is_saved
-    async def discard_ban_id(self, db: AsyncSession, player_id: str):
+    async def discard_ban_id(self, db: AsyncSession, player_id: int):
         """Delete a ban record
 
         Parameters
         ----------
         db : AsyncSession
             An asynchronous database session
-        player_id : str
+        player_id : int
             The ID of a player
 
         Raises
@@ -447,7 +447,7 @@ class Integration(ABC):
 
     @is_saved
     async def discard_multiple_ban_ids(
-        self, db: AsyncSession, player_ids: Sequence[str]
+        self, db: AsyncSession, player_ids: Sequence[int]
     ):
         """Deletes all ban records that are associated
         with any of the given responses
@@ -456,10 +456,14 @@ class Integration(ABC):
         ----------
         db : AsyncSession
             An asynchronous database session
-        player_ids : Sequence[str]
+        player_ids : Sequence[int]
             A sequence of player IDs
         """
-        self.logger.info("%r: Discarding bans in bulk: %s", self, ", ".join(player_ids))
+        self.logger.info(
+            "%r: Discarding bans in bulk: %s",
+            self,
+            ", ".join(str(id) for id in player_ids),
+        )
         await bulk_delete_bans(
             db,
             models.PlayerBan.player_id.in_(player_ids),
@@ -587,13 +591,13 @@ class Integration(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def unban_player(self, player_id: str, game: Game | None = None):
+    async def unban_player(self, player_id: int, game: Game | None = None):
         """Instruct the remote integration to unban a player, should
         they be banned.
 
         Parameters
         ----------
-        player_id : str
+        player_id : int
             The ID of the player to unban
         game : Game | None
             The game the player is banned in. If None, any game is accepted.
@@ -629,7 +633,7 @@ class Integration(ABC):
 
     @abstractmethod
     async def bulk_unban_players(
-        self, player_ids: Sequence[str], game: Game | None = None
+        self, player_ids: Sequence[int], game: Game | None = None
     ):
         """Instruct the remote integration to unban multiple players.
         Depending on the implementation this may take a while.
@@ -639,7 +643,7 @@ class Integration(ABC):
 
         Parameters
         ----------
-        player_ids : Sequence[str]
+        player_ids : Sequence[int]
             The IDs of the players to unban
         game : Game | None
             The game the players are banned in. If None, any game is accepted.

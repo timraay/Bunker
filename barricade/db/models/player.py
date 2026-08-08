@@ -1,6 +1,5 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from barricade.db import ModelBase
@@ -15,10 +14,12 @@ if TYPE_CHECKING:
 class Player(ModelBase):
     __tablename__ = "players"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True)
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    steam_id: Mapped[str | None] = mapped_column(index=True, unique=True)
+    xplay_id: Mapped[str | None] = mapped_column(index=True, unique=True)
     bm_rcon_url: Mapped[str | None]
     hll_eos_id: Mapped[str | None]
-    hllv_eos_id: Mapped[str | None]
+    hllv_eos_id: Mapped[str | None] = mapped_column(index=True, unique=True)
     platform: Mapped[PlayerPlatform | None]
 
     reports: Mapped[list["PlayerReport"]] = relationship(back_populates="player")

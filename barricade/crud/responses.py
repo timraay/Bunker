@@ -284,7 +284,7 @@ async def get_pending_responses(
 
 async def get_reports_for_player_with_no_community_review(
     db: AsyncSession,
-    player_id: str,
+    player_id: int,
     community_id: int,
     platform_filter: PlatformFlag | None = None,
     reason_filter: ReportReasonFlag | None = None,
@@ -296,7 +296,7 @@ async def get_reports_for_player_with_no_community_review(
     ----------
     db : AsyncSession
         An asynchronous database session
-    player_id : str
+    player_id : int
         The ID of the player
     community_id : int
         The ID of the community

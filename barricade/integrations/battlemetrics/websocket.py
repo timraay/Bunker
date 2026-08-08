@@ -211,7 +211,7 @@ class BattlemetricsWebsocket(Websocket):
         if "players" not in payload:
             return
 
-        player_ids = []
+        player_game_ids = []
 
         for player in payload["players"]:
             # Check whether the player has joined; we are not interested
@@ -223,9 +223,9 @@ class BattlemetricsWebsocket(Websocket):
             if not player_id:
                 continue
 
-            player_ids.append(player_id)
+            player_game_ids.append(player_id)
 
-        if not player_ids:
+        if not player_game_ids:
             return
 
         server_id = payload["id"]
@@ -233,6 +233,6 @@ class BattlemetricsWebsocket(Websocket):
 
         await send_optional_player_alert_to_community(
             self.integration.config.community_id,
-            player_ids,
+            player_game_ids,
             game,
         )

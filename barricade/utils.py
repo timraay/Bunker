@@ -55,14 +55,22 @@ def safe_create_task(
 
 
 RE_PLAYER_STEAM_64_ID = re.compile(r"^\d{17}$")
-RE_PLAYER_UUID = re.compile(r"^[0-9a-f]{32}$")
+RE_PLAYER_EOS_ID = re.compile(r"^0002\d{28}$")
+RE_PLAYER_XPLAY_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
-def get_player_id_type(player_id: str) -> PlayerIDType:
-    if RE_PLAYER_STEAM_64_ID.match(player_id):
+def is_steam_id(player_game_id: str) -> bool:
+    return bool(RE_PLAYER_STEAM_64_ID.match(player_game_id))
+
+
+def get_player_id_type(player_game_id: str) -> PlayerIDType:
+    if RE_PLAYER_STEAM_64_ID.match(player_game_id):
         return PlayerIDType.STEAM_64_ID
-    elif RE_PLAYER_UUID.match(player_id):
-        return PlayerIDType.UUID
+    elif RE_PLAYER_EOS_ID.match(player_game_id):
+        return PlayerIDType.EOS_ID
+    # Check XPlay ID last since it is the most generic and could match other formats
+    elif RE_PLAYER_XPLAY_ID.match(player_game_id):
+        return PlayerIDType.XPLAY_ID
     else:
         raise ValueError("Unknown player ID type")
 

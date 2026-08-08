@@ -8,7 +8,9 @@ from sqlalchemy.orm import Load
 
 from barricade import schemas
 from barricade.db import models
+from barricade.enums import Game
 from barricade.exceptions import AlreadyExistsError
+from barricade.utils import game_switch, is_steam_id
 
 
 async def get_watchlist_by_id(
@@ -39,7 +41,7 @@ async def get_watchlist_by_id(
 
 
 async def get_watchlist_by_player_and_community(
-    db: AsyncSession, player_id: str, community_id: int, load_relations: bool = False
+    db: AsyncSession, player_id: int, community_id: int, load_relations: bool = False
 ):
     stmt = select(models.PlayerWatchlist).where(
         models.PlayerWatchlist.player_id == player_id,
@@ -50,7 +52,7 @@ async def get_watchlist_by_player_and_community(
     return await db.scalar(stmt)
 
 
-async def is_player_watchlisted(db: AsyncSession, player_id: str, community_id: int):
+async def is_player_watchlisted(db: AsyncSession, player_id: int, community_id: int):
     stmt = select(
         exists().where(
             models.PlayerWatchlist.player_id == player_id,
@@ -61,9 +63,35 @@ async def is_player_watchlisted(db: AsyncSession, player_id: str, community_id: 
     return bool(result)
 
 
+async def is_player_watchlisted_by_game_id(
+    db: AsyncSession, player_game_id: str, game: Game, community_id: int
+):
+    stmt = (
+        select(1)
+        .select_from(models.PlayerWatchlist)
+        .join(models.PlayerWatchlist.player)
+        .where(
+            models.PlayerWatchlist.community_id == community_id,
+            game_switch(
+                game,
+                (
+                    models.Player.steam_id == player_game_id
+                    if is_steam_id(player_game_id)
+                    else models.Player.xplay_id == player_game_id
+                ),
+                models.Player.hllv_eos_id == player_game_id,
+            ),
+        )
+    )
+
+    stmt = select(stmt.exists())
+    result = await db.scalar(stmt)
+    return bool(result)
+
+
 async def bulk_get_watchlists_by_player_and_community(
     db: AsyncSession,
-    player_ids: Iterable[str],
+    player_ids: Iterable[int],
     community_id: int,
     load_relations: bool = False,
 ):
@@ -118,7 +146,7 @@ async def bulk_delete_watchlists(db: AsyncSession, *where_clauses):
 
 
 async def filter_watchlisted_player_ids(
-    db: AsyncSession, player_ids: Iterable[str], community_id: int
+    db: AsyncSession, player_ids: Iterable[int], community_id: int
 ):
     db_watchlists = await bulk_get_watchlists_by_player_and_community(
         db, player_ids, community_id

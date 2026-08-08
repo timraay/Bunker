@@ -21,7 +21,7 @@ from barricade.logger import get_logger
 
 async def get_all_bans(
     db: AsyncSession,
-    player_id: str | None = None,
+    player_id: int | None = None,
     community_id: int | None = None,
     integration_id: int | None = None,
     limit: int = 100,
@@ -74,7 +74,7 @@ async def get_ban_by_id(db: AsyncSession, ban_id: int, load_relations: bool = Fa
 
 async def get_ban_by_player_and_integration(
     db: AsyncSession,
-    player_id: str,
+    player_id: int,
     integration_id: int,
     game: Game | None = None,
     load_relations: bool = False,
@@ -112,7 +112,7 @@ async def get_bans_by_integration(
 
 async def get_player_bans_for_community(
     db: AsyncSession,
-    player_id: str,
+    player_id: int,
     community_id: int,
     game: Game | None = None,
 ):
@@ -163,7 +163,7 @@ async def bulk_delete_bans(db: AsyncSession, *where_clauses):
 
 async def get_player_bans_without_responses(
     db: AsyncSession,
-    player_ids: Sequence[str] | None = None,
+    player_ids: Sequence[int] | None = None,
     community_id: int | None = None,
     game: Game | None = None,
 ):
@@ -176,7 +176,7 @@ async def get_player_bans_without_responses(
     ----------
     db : AsyncSession
         An asynchronous database session
-    player_ids : Sequence[str] | None
+    player_ids : Sequence[int] | None
         A list of player IDs to filter by, by default None
     community_id : int | None, optional
         The ID of a community to filter results by, by default None
@@ -205,7 +205,10 @@ async def get_player_bans_without_responses(
                 )
             )
         )
-        .options(selectinload(models.PlayerBan.integration))
+        .options(
+            selectinload(models.PlayerBan.player),
+            joinedload(models.PlayerBan.integration),
+        )
     )
 
     if player_ids is not None:
@@ -223,7 +226,7 @@ async def get_player_bans_without_responses(
 
 async def expire_bans_of_player(
     db: AsyncSession,
-    player_id: str,
+    player_id: int,
     community_id: int,
     game: Game | None = None,
 ):

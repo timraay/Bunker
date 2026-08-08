@@ -78,7 +78,7 @@ class IntegrationBanError(IntegrationFailureError):
     """Exception raised when an integration fails to ban or
     unban a player."""
 
-    def __init__(self, player_id: str, *args: object) -> None:
+    def __init__(self, player_id: int, *args: object) -> None:
         self.player_id = player_id
         super().__init__(*args)
 
@@ -99,7 +99,7 @@ class IntegrationBulkBanError(IntegrationFailureError):
     """Exception raised when an integration fails to ban or
     unban one or more players during a bulk operation."""
 
-    def __init__(self, player_ids: list[str], *args: object) -> None:
+    def __init__(self, player_ids: list[int], *args: object) -> None:
         self.player_ids = player_ids
         super().__init__(*args)
 
@@ -107,6 +107,6 @@ class IntegrationBulkBanError(IntegrationFailureError):
 class AlreadyBannedError(IntegrationFailureError):
     """Raised when a player is already banned"""
 
-    def __init__(self, player_id: str, *args: object) -> None:
+    def __init__(self, player_id: int, *args: object) -> None:
         self.player_id = player_id
         super().__init__(*args)

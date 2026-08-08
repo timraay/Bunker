@@ -16,7 +16,7 @@ from barricade.enums import (
     ReportReasonFlag,
 )
 from barricade.steam import get_steam_avatar_url
-from barricade.utils import PlayerIDType, game_switch, get_player_id_type, validate_url
+from barricade.utils import game_switch, validate_url
 
 HLL_GAME_PILL = "".join(
     [
@@ -176,11 +176,8 @@ def container_add_player(
     )
 
     # Determine whether player platform must be Steam
-    try:
-        player_id_type = get_player_id_type(player.player_id)
-    except ValueError:
-        player_id_type = None
-    is_steam = player_id_type == PlayerIDType.STEAM_64_ID
+    player_game_id = player.player.get_game_id(report.game) or ""
+    has_steam_id = player.player.steam_id is not None
 
     # Build message content
     # Player name
@@ -192,32 +189,23 @@ def container_add_player(
             player_name_prefix = Emojis.HIGHLIGHT_GREEN
     content = f"**`{rank}.`{player_name_prefix}{esc_md(player.player_name)}**\n"
 
-    if isinstance(player, schemas.PlayerReportRef):
-        player_platform = player.player.platform
-        player_eos_id = game_switch(
-            report.game,
-            player.player.hll_eos_id,
-            player.player.hllv_eos_id,
-        )
-        bm_rcon_url = player.player.bm_rcon_url
-    else:
-        player_platform = player.platform
-        player_eos_id = game_switch(
-            report.game,
-            player.hll_eos_id,
-            player.hllv_eos_id,
-        )
-        bm_rcon_url = player.bm_rcon_url
+    player_platform = player.player.platform
+    player_eos_id = game_switch(
+        report.game,
+        player.player.hll_eos_id,
+        player.player.hllv_eos_id,
+    )
+    bm_rcon_url = player.player.bm_rcon_url
 
     # Player ID
     platform_emoji = get_player_platform_emoji(
         player_platform,
         report.platforms_bitflag,
     )
-    content += f"{platform_emoji} *`{player.player_id}`*"
+    content += f"{platform_emoji} *`{player_game_id}`*"
 
     # Player EOS ID
-    if with_eos_ids and not is_steam:
+    if with_eos_ids and report.game == Game.HLL and not has_steam_id:
         content += f"\n-# {Emojis.EASY_ANTI_CHEAT}"
         content += f"*`{player_eos_id}`*" if player_eos_id else "No EOS ID known"
 
@@ -253,11 +241,11 @@ def container_add_player(
 
     # Links
     links = []
-    if is_steam:
+    if has_steam_id:
         links.append(
             format_url(
                 "Steam",
-                f"https://steamcommunity.com/profiles/{player.player_id}",
+                f"https://steamcommunity.com/profiles/{player.player.steam_id}",
             )
         )
 
@@ -273,10 +261,12 @@ def container_add_player(
         game_switch(
             report.game,
             format_url(
-                "HLLRecords", f"https://hllrecords.com/profiles/{player.player_id}"
+                "HLLRecords",
+                f"https://hllrecords.com/profiles/{player.player.steam_id}",
             ),
             format_url(
-                "HLLVRecords", f"https://hllvrecords.com/profiles/{player.player_id}"
+                "HLLVRecords",
+                f"https://hllvrecords.com/profiles/{player.player.steam_id}",
             ),
         )
     )
@@ -310,28 +300,24 @@ def container_add_excess_players(
     content = f"{len(excess_players)} players could not be displayed.\n"
     for player in excess_players:
         # Player ID
-        player_platform = (
-            player.player.platform
-            if isinstance(player, schemas.PlayerReportRef)
-            else player.platform
-        )
+        player_game_id = player.player.get_game_id(report.game) or ""
         platform_emoji = get_player_platform_emoji(
-            player_platform,
+            player.player.platform,
             report.platforms_bitflag,
         )
-        content += f"\n- {platform_emoji} *`{player.player_id}`*"
+        content += f"\n- {platform_emoji} *`{player_game_id}`*"
 
     container.add_item(discord.ui.TextDisplay(content))
 
 
 async def get_player_avatar_urls(
-    players: Sequence[schemas._PlayerReportBase],
+    players: Sequence[schemas.PlayerReportRef | schemas.PlayerReportCreateParams],
 ) -> list[str | None]:
     # Get player avatars
     try:
         return await asyncio.wait_for(
             asyncio.gather(
-                *(get_steam_avatar_url(player.player_id) for player in players)
+                *(get_steam_avatar_url(player.player.steam_id) for player in players)
             ),
             timeout=1.5,
         )

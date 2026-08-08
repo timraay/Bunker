@@ -3,7 +3,7 @@ from enum import StrEnum
 
 import pydantic
 
-from barricade.enums import Game
+from barricade.enums import Game, Platform, PlayerPlatform
 
 
 class ClientRequestType(StrEnum):
@@ -64,6 +64,7 @@ class NewReportRequestPayloadPlayer(pydantic.BaseModel):
     player_id: str
     player_name: str
     bm_rcon_url: str | None
+    platform: PlayerPlatform | None
 
 
 class NewReportRequestPayload(pydantic.BaseModel):
@@ -71,4 +72,6 @@ class NewReportRequestPayload(pydantic.BaseModel):
     body: str
     reasons: list[str]
     attachment_urls: list[str]
+    game: Game
+    platforms: list[Platform]
     players: list[NewReportRequestPayloadPlayer]

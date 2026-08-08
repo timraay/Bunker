@@ -9,6 +9,7 @@ def find_player_id_in_attributes(attrs: dict) -> tuple[str | None, PlayerIDType]
     identifiers = attrs["identifiers"]
     for identifier_data in identifiers:
         try:
+            # TODO: Add HLL & HLLV EOS IDs
             player_id_type = PlayerIDType(identifier_data["type"])
         except ValueError:
             continue

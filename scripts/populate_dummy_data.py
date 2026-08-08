@@ -110,16 +110,20 @@ async def main():
                 token_id=t1.id,
                 players=[
                     schemas.PlayerReportCreateParams(
-                        player_id="11111111111111111",
                         player_name="Player 1",
-                        bm_rcon_url=None,
-                        platform=PlayerPlatform.STEAM,
+                        player=schemas.PlayerCreateParams(
+                            steam_id="11111111111111111",
+                            bm_rcon_url=None,
+                            platform=PlayerPlatform.STEAM,
+                        ),
                     ),
                     schemas.PlayerReportCreateParams(
-                        player_id="22222222222222222",
                         player_name="Player 2",
-                        bm_rcon_url=None,
-                        platform=PlayerPlatform.EPIC,
+                        player=schemas.PlayerCreateParams(
+                            steam_id="22222222222222222",
+                            bm_rcon_url=None,
+                            platform=PlayerPlatform.STEAM,
+                        ),
                     ),
                 ],
                 game=schemas.Game.HLL,
@@ -138,10 +142,12 @@ async def main():
                 token_id=t2.id,
                 players=[
                     schemas.PlayerReportCreateParams(
-                        player_id="76561199023367826",
                         player_name="Abu",
-                        bm_rcon_url=None,
-                        platform=PlayerPlatform.STEAM,
+                        player=schemas.PlayerCreateParams(
+                            steam_id="76561199023367826",
+                            bm_rcon_url=None,
+                            platform=PlayerPlatform.STEAM,
+                        ),
                     ),
                 ],
                 game=schemas.Game.HLL,

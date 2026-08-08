@@ -64,11 +64,16 @@ def get_alert_embed(
     reports_urls: list[tuple[schemas.Report, str]],
     player: schemas.PlayerRef,
     player_name: str | None,
+    game: Game,
     alert_type: PlayerAlertType,
 ):
-    player_id_type = get_player_id_type(player.id)
+    player_game_id = player.get_game_id(game)
+    if not player_game_id:
+        raise ValueError(f"Player {player.id} does not have a game ID for {game.name}")
 
-    title = f"{get_player_platform_emoji(player.platform)} *`{player.id}`*"
+    player_id_type = get_player_id_type(player_game_id)
+
+    title = f"{get_player_platform_emoji(player.platform)} *`{player_game_id}`*"
     if player_name:
         title = f"{player_name}\n{title}"
     description = []
@@ -77,7 +82,7 @@ def get_alert_embed(
         description.append(
             format_url(
                 "View on Steam",
-                f"https://steamcommunity.com/profiles/{player.id}",
+                f"https://steamcommunity.com/profiles/{player_game_id}",
             )
         )
 
