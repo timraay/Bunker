@@ -12,14 +12,17 @@ from barricade.discord.views.report_edit import ReportEditTagsModal, _ReportEdit
 
 
 class ReportCreateView(_ReportEditView):
-    def __init__(self):
-        super().__init__()
-
     @classmethod
-    async def new(cls, interaction: discord.Interaction) -> None:
-        self = cls()
+    async def new(
+        cls, interaction: discord.Interaction, community: schemas.CommunityRef
+    ) -> None:
+        self = cls(community=community)
+
         modal = ReportEditTagsModal(self, send_on_submit=True)
-        await interaction.response.send_modal(modal)
+        if modal.is_redundant():
+            await modal.on_submit(interaction)
+        else:
+            await interaction.response.send_modal(modal)
 
     async def submit_report(self, interaction: discord.Interaction) -> None:
         async with session_factory.begin() as db:

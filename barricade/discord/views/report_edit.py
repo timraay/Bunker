@@ -64,8 +64,9 @@ def _get_assertion_result(assertion_func: Callable[[], Any]) -> bool:
 
 
 class _ReportEditView(LayoutView):
-    def __init__(self):
+    def __init__(self, community: schemas.CommunityRef):
         super().__init__(timeout=60 * 30)  # 30 minutes
+        self.community = community
 
         self.params = ReportEditViewParams(
             body="",
@@ -345,6 +346,7 @@ class _ReportEditView(LayoutView):
                         if self.has_valid_tags()
                         else discord.ButtonStyle.blurple
                     ),
+                    disabled=ReportEditTagsModal(self).is_redundant(),
                 ),
             )
         )
@@ -375,6 +377,11 @@ class _ReportEditView(LayoutView):
 
     async def open_tags_modal(self, interaction: discord.Interaction):
         modal = ReportEditTagsModal(self)
+        if modal.is_redundant():
+            raise CustomException(
+                "No tags to edit!",
+                "Change your community settings to support more games and platforms.",
+            )
         await interaction.response.send_modal(modal)
 
     async def open_reasons_modal(self, interaction: discord.Interaction):
@@ -415,13 +422,13 @@ class _ReportEditView(LayoutView):
 
 
 class ReportEditView(_ReportEditView):
-    def __init__(self, report_id: int):
-        super().__init__()
+    def __init__(self, community: schemas.CommunityRef, report_id: int):
+        super().__init__(community)
         self.report_id = report_id
 
     @classmethod
     async def from_report(cls, report: schemas.ReportWithToken):
-        view = cls(report_id=report.id)
+        view = cls(community=report.token.community, report_id=report.id)
         view.params = ReportEditViewParams(
             body=report.body,
             reasons_bitflag=report.reasons_bitflag,
@@ -525,28 +532,56 @@ class ReportEditTagsModal(Modal):
             ],
         )
 
-        self.add_item(
-            discord.ui.Label(
-                text="Game",
-                description="Which game is this report for?",
-                component=self.game_input,
+        if self.get_default_game() is None:
+            self.add_item(
+                discord.ui.Label(
+                    text="Game",
+                    description="Which game is this report for?",
+                    component=self.game_input,
+                )
             )
-        )
 
-        self.add_item(
-            discord.ui.Label(
-                text="Crossplay",
-                description="Which platforms are able to join your server(s)?",
-                component=self.platforms_input,
+        if self.get_default_platforms() is None:
+            self.add_item(
+                discord.ui.Label(
+                    text="Crossplay",
+                    description="Which platforms are able to join your server(s)?",
+                    component=self.platforms_input,
+                )
             )
+
+    def get_default_game(self) -> Game | None:
+        games = self.view.community.games_bitflag.to_games()
+        return games[0] if len(games) == 1 else None
+
+    def get_default_platforms(self) -> PlatformFlag | None:
+        default_game = self.get_default_game()
+
+        if default_game != Game.HLL:
+            return None
+
+        platform_filter = self.view.community.hll_platform_filter
+        platforms = [] if platform_filter is None else platform_filter.to_platforms()
+        return platform_filter if len(platforms) == 1 else None
+
+    def is_redundant(self) -> bool:
+        return (
+            self.get_default_game() is not None
+            and self.get_default_platforms() is not None
         )
 
     def get_game(self) -> Game:
+        if game := self.get_default_game():
+            return game
+
         if not self.game_input.value:
             raise ValueError("No game selected")
         return Game[self.game_input.value]
 
     def get_platforms(self) -> PlatformFlag:
+        if platforms := self.get_default_platforms():
+            return platforms
+
         platforms_bitflag = PlatformFlag(0)
         for platform_name in self.platforms_input.values:
             platforms_bitflag |= Platform[platform_name].to_flag()

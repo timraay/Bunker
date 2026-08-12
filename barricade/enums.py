@@ -96,6 +96,13 @@ class GameFlag(IntFlag):
             self |= game
         return self
 
+    def to_games(self) -> list[Game]:
+        games: list[Game] = []
+        for game in Game:
+            if self & GameFlag[game.name]:
+                games.append(game)
+        return games
+
 
 class PlayerAlertType(StrEnum):
     WATCHLISTED = "Watchlisted"

@@ -1,6 +1,7 @@
 import discord
 from discord import ButtonStyle, Interaction
 
+from barricade import schemas
 from barricade.crud.communities import get_admin_by_id
 from barricade.db import session_factory
 from barricade.discord.utils import CallableButton, CustomException, LayoutView
@@ -39,4 +40,6 @@ class ReportSubmissionStartView(LayoutView):
                     "Only registered server admins can create reports!"
                 )
 
-        await ReportCreateView.new(interaction)
+            community = schemas.CommunityRef.model_validate(db_admin.community)
+
+        await ReportCreateView.new(interaction, community)
