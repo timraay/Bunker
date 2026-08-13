@@ -362,7 +362,7 @@ class CustomIntegration(Integration):
 
             successful_ids: dict[str, str] = e.response["ban_ids"]
             for player_id, ban_id in successful_ids.items():
-                yield player_id, ban_id
+                yield player_id, str(ban_id)
 
             if not partial_retry:
                 raise
@@ -374,12 +374,12 @@ class CustomIntegration(Integration):
             async for player_id, ban_id in self.add_multiple_bans(
                 missing_player_ids, game, partial_retry=False
             ):
-                yield player_id, ban_id
+                yield player_id, str(ban_id)
         else:
             assert response is not None
             successful_ids: dict[str, str] = response["ban_ids"]
             for player_id, ban_id in successful_ids.items():
-                yield player_id, ban_id
+                yield player_id, str(ban_id)
 
     @is_websocket_enabled
     async def remove_multiple_bans(
@@ -417,7 +417,7 @@ class CustomIntegration(Integration):
             async for ban_id in self.remove_multiple_bans(
                 missing_ban_ids, game, partial_retry=False
             ):
-                yield ban_id
+                yield str(ban_id)
         else:
             assert response is not None
             for ban_id in response["ban_ids"]:
