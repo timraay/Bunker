@@ -55,7 +55,7 @@ def safe_create_task(
 
 
 RE_PLAYER_STEAM_64_ID = re.compile(r"^\d{17}$")
-RE_PLAYER_EOS_ID = re.compile(r"^0002\d{28}$")
+RE_PLAYER_EOS_ID = re.compile(r"^0002[0-9a-f]{28}$")
 RE_PLAYER_XPLAY_ID = re.compile(r"^[0-9a-f]{32}$")
 
 
