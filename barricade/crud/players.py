@@ -272,7 +272,7 @@ async def get_or_upsert_player(db: AsyncSession, player: schemas.PlayerCreatePar
     if len(db_players) == 1:
         db_player = db_players[0]
 
-    if len(db_players) == 2:
+    elif len(db_players) == 2:
         db_player = await merge_players(db, db_players[0], db_players[1])
 
     else:
