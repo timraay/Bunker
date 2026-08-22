@@ -33,7 +33,8 @@ from barricade.utils import validate_url
 async def safe_get_integration_name(integration: Integration) -> str | None:
     """Get the name of an integration, returning a placeholder if it fails."""
     try:
-        return await integration.get_instance_name()
+        async with asyncio.timeout(2):
+            return await integration.get_instance_name()
     except Exception:
         return None
 
