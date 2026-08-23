@@ -64,9 +64,10 @@ async def reconnect(
                 if e.status_code in (403, 1008):
                     raise
 
-            # Also raise if handshake fails without a status code
-            elif isinstance(e, websockets.InvalidHandshake):
-                raise
+            # Also raise if handshake has repeatedly failed without a status code
+            elif isinstance(e, websockets.InvalidHandshake):  # noqa: SIM102
+                if backoff_delay >= BACKOFF_MAX:
+                    raise
 
             # Add a random initial delay between 0 and 5 seconds.
             # See 7.2.3. Recovering from Abnormal Closure in RFC 6544.
