@@ -117,10 +117,10 @@ class CRCONIntegration(
 
     async def validate(self, community: schemas.Community) -> set[str]:
         await self.validate_crcon_version()
+        missing_optional_perms = await self.validate_scopes()
 
         await super().validate(community)
 
-        missing_optional_perms = await self.validate_scopes()
         await self.validate_ban_lists(community)
 
         return missing_optional_perms
