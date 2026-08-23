@@ -461,14 +461,15 @@ class CommunityWithRelations(Community, SafeCommunityWithRelations):  # type: ig
     pass
 
 
-class Player(PlayerRef):
-    reports: list[PlayerReport]
-    watchlists: list[PlayerWatchlistRef]
-
-
 class PlayerBan(PlayerBanRef):
     player: PlayerRef
     integration: IntegrationConfig
+
+
+class Player(PlayerRef):
+    reports: list[PlayerReport]
+    bans: list[PlayerBanRef]
+    watchlists: list[PlayerWatchlistRef]
 
 
 # --- Entity creation parameters

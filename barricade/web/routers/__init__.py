@@ -7,6 +7,7 @@ from . import (
     bans,
     communities,
     integrations,
+    players,
     reports,
     responses,
     web_users,
@@ -23,6 +24,7 @@ def setup_all(app: FastAPI):
     bans.setup(app)
     communities.setup(app)
     integrations.setup(app)
+    players.setup(app)
     reports.setup(app)
     responses.setup(app)
     web_users.setup(app)

@@ -2,6 +2,7 @@ import logging
 
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from barricade import schemas
 from barricade.db import models
@@ -10,7 +11,22 @@ from barricade.exceptions import NotFoundError
 from barricade.utils import game_switch, is_steam_id
 
 
-async def get_player(db: AsyncSession, player_id: int):
+async def get_all_players(
+    db: AsyncSession,
+    limit: int = 100,
+    offset: int = 0,
+):
+    stmt = select(models.Player).limit(limit).offset(offset)
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+async def get_player(
+    db: AsyncSession,
+    player_id: int,
+    *,
+    load_relations: bool = False,
+):
     """Look up a player.
 
     Parameters
@@ -19,13 +35,26 @@ async def get_player(db: AsyncSession, player_id: int):
         An asynchronous database session
     player_id : int
         The ID of the player
+    load_relations : bool, optional
+        Whether to load related models, by default False
 
     Returns
     -------
     Player | None
         The player model, or None if it does not exist
     """
-    return await db.get(models.Player, player_id)
+    if load_relations:
+        options = (
+            selectinload(models.Player.bans),
+            selectinload(models.Player.watchlists),
+            selectinload(models.Player.reports).selectinload(
+                models.PlayerReport.report
+            ),
+        )
+    else:
+        options = ()
+
+    return await db.get(models.Player, player_id, options=options)
 
 
 async def get_player_by_game_id(db: AsyncSession, player_game_id: str, game: Game):
